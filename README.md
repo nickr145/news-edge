@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # NewsEdge
 
 Real-time stock news sentiment platform with async ingestion, NLP scoring, technical-feature extraction, and XGBoost recommendation inference.
@@ -137,3 +138,6 @@ locust -f locustfile.py --host http://localhost:8000
 
 - `SENTIMENT_MODEL=finbert` is supported by interface, but the heavy Transformers/Torch deps are not pre-pinned in `requirements.txt` to keep baseline environment lightweight.
 - For production-grade throughput, add GPU-backed FinBERT microservice batching and SHAP-based explanation fields in `predictions.feature_importances`.
+=======
+# news-edge
+>>>>>>> aabe8616e9abe8dec9c7bb1000efcd2fd5dcfaa9
