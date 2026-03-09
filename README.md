@@ -1,83 +1,66 @@
-<<<<<<< HEAD
 # NewsEdge
 
-Real-time stock news sentiment platform with async ingestion, NLP scoring, technical-feature extraction, and XGBoost recommendation inference.
+Real-time stock news sentiment platform with historical backfill, live streaming ingestion, ticker relevance filtering, risk analytics, and recommendation inference.
 
-## Implemented
+## Features
 
-### Backend
-- FastAPI API + WebSocket server.
-- Redis Stream buffering (`news_stream`) for incoming Alpaca news events.
-- Celery worker tasks for async persistence + sentiment scoring.
-- PostgreSQL/SQLite storage models:
-  - `articles`
-  - `article_tickers`
-  - `sentiment_scores`
-  - `predictions`
-- Alpaca REST bar ingestion + technical indicators:
-  - RSI(14)
-  - 5-day momentum
-  - Bollinger Band position
-  - volume ratio
-- XGBoost training/inference pipeline:
-  - dataset builder (`app/ml/dataset.py`)
-  - model artifact save/load (`joblib`)
-  - prediction probabilities (`BUY/HOLD/SELL`)
+### Data + Ingestion
+- Alpaca News WebSocket ingestion for real-time events.
+- Historical backfill via Alpaca News REST on ticker subscribe.
+- Redis Streams buffer and Celery workers for async persistence/scoring.
+- PostgreSQL (or SQLite fallback) for articles, sentiment scores, and predictions.
+
+### NLP + Analytics
+- Pluggable sentiment engine (`vader` default, `finbert` interface support).
+- Rolling sentiment stats: mean, std, EWMA.
+- Relevance scoring to suppress weak cross-market articles.
+- Sentiment trend bucketing for charting.
+
+### Prediction + Risk
+- Recommendation endpoint (`BUY` / `HOLD` / `SELL`) with confidence.
+- XGBoost pipeline scaffold for train/load/infer.
+- Risk metrics endpoint with:
+  - annualized volatility
+  - beta vs benchmark (default `SPY`)
+  - max drawdown
+  - high-water mark
+  - cumulative return
 
 ### Frontend
 - React + Vite dashboard.
-- Ticker search route (`/`).
-- Ticker dashboard route (`/ticker/:symbol`) with:
-  - live news feed
-  - sentiment summary/trend charts
-  - prediction trigger + recommendation card
+- Ticker search and live feed.
+- History window selector (`1/7/30/90 days`).
+- Min relevance selector (`0.20/0.35/0.50/0.70`).
+- Sentiment charts + prediction card + risk panel.
 
-### Dev/Infra
-- Docker Compose services: `api`, `worker`, `consumer`, `db`, `redis`, `frontend`.
-- Alembic setup + initial migration.
-- Pytest suite (lightweight unit tests).
-- Benchmarks:
-  - WebSocket latency script
-  - Locust load profile
-
-## Project Structure
-
-- `app/main.py`: FastAPI app lifecycle and routers.
-- `app/services/ingestion.py`: Alpaca WebSocket producer -> Redis Stream.
-- `app/streams/news_stream.py`: Redis Stream helpers.
-- `app/tasks/news_tasks.py`: Celery task for persist+score.
-- `app/services/price_data.py`: Alpaca REST bar fetch + indicators.
-- `app/ml/`: training dataset + XGBoost model code.
-- `app/services/prediction.py`: model load/train + inference row assembly.
-- `frontend/`: React app.
-- `backend_alembic/`: migrations.
-- `tests/`: unit tests.
-
-## API Endpoints
+## Main Endpoints
 
 - `GET /health`
-- `GET /api/news/{ticker}`
-- `GET /api/news/{ticker}/sentiment`
-- `GET /api/news/{ticker}/trend`
+- `GET /api/news/{ticker}?days=&limit=&min_relevance=`
+- `GET /api/news/{ticker}/sentiment?days=&min_relevance=`
+- `GET /api/news/{ticker}/trend?hours=&min_relevance=`
+- `POST /api/news/subscribe/{ticker}?backfill_days=&backfill_limit=`
+- `GET /api/news/subscriptions`
 - `POST /api/news/mock/{ticker}` (dev helper)
-- `GET /api/price/{ticker}/bars`
+- `GET /api/price/{ticker}/bars?limit=`
 - `GET /api/price/{ticker}/features`
-- `POST /api/predict/{ticker}` (async Celery job)
+- `GET /api/price/{ticker}/risk?benchmark=SPY&days=365`
+- `POST /api/predict/{ticker}` (async)
 - `GET /api/predict/job/{job_id}`
 - `POST /api/predict/{ticker}/sync`
 - `GET /api/predict/result/{prediction_id}`
 - `GET /api/predict/{ticker}/history`
 - `WS /ws/news/{ticker}`
 
-## Local Setup
+## Local Run
 
-1. Copy environment:
+1. Create env:
 
 ```bash
 cp .env.example .env
 ```
 
-2. Run full stack:
+2. Start stack:
 
 ```bash
 docker compose up --build
@@ -87,57 +70,29 @@ docker compose up --build
 - API docs: `http://localhost:8000/docs`
 - Frontend: `http://localhost:5173`
 
-## Celery/Stream Flow
+## Typical Workflow
 
-1. Ingestion service receives Alpaca news events.
-2. Event is appended to Redis Stream (`XADD`).
-3. Consumer process reads stream with consumer group (`XREADGROUP`).
-4. Consumer enqueues Celery task per event.
-5. Worker persists article/tickers and writes sentiment rows.
+1. Open ticker page in frontend.
+2. App calls subscribe endpoint with backfill window.
+3. Historical news is fetched + scored.
+4. Live WebSocket continues incremental updates.
+5. Dashboard updates sentiment, relevance-filtered feed, risk metrics, and prediction.
 
-## Training + Inference
+## Training + Test
 
-- Manual training script:
+Train model artifact:
 
 ```bash
 python -m app.scripts.train_model
 ```
 
-- Prediction endpoint uses saved model artifact from `MODEL_ARTIFACT_PATH`.
-- If no model artifact exists and minimum samples are insufficient, fallback output is conservative `HOLD`.
-
-## Testing
+Run tests:
 
 ```bash
 pytest -q
 ```
 
-## Migrations
-
-Apply migration:
-
-```bash
-alembic upgrade head
-```
-
-## Benchmarks
-
-WebSocket latency sample:
-
-```bash
-python -m app.scripts.benchmark_ws_latency
-```
-
-Locust load test:
-
-```bash
-locust -f locustfile.py --host http://localhost:8000
-```
-
 ## Notes
 
-- `SENTIMENT_MODEL=finbert` is supported by interface, but the heavy Transformers/Torch deps are not pre-pinned in `requirements.txt` to keep baseline environment lightweight.
-- For production-grade throughput, add GPU-backed FinBERT microservice batching and SHAP-based explanation fields in `predictions.feature_importances`.
-=======
-# news-edge
->>>>>>> aabe8616e9abe8dec9c7bb1000efcd2fd5dcfaa9
+- If no model artifact is available or samples are insufficient, prediction falls back to conservative `HOLD` behavior.
+- FinBERT support exists by interface; production use should pin/serve model dependencies separately for reliability and throughput.
