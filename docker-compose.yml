@@ -1,0 +1,79 @@
+services:
+  api:
+    build: .
+    container_name: newsedge-api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql+psycopg2://postgres:postgres@db:5432/newsedge
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./:/app
+
+  worker:
+    build: .
+    container_name: newsedge-worker
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql+psycopg2://postgres:postgres@db:5432/newsedge
+    depends_on:
+      - db
+      - redis
+    command: celery -A app.tasks.celery_app.celery_app worker --loglevel=info
+    volumes:
+      - ./:/app
+
+  consumer:
+    build: .
+    container_name: newsedge-consumer
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql+psycopg2://postgres:postgres@db:5432/newsedge
+    depends_on:
+      - redis
+      - worker
+    command: python -m app.scripts.stream_consumer
+    volumes:
+      - ./:/app
+
+  db:
+    image: postgres:16
+    container_name: newsedge-db
+    environment:
+      POSTGRES_DB: newsedge
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    container_name: newsedge-redis
+    ports:
+      - "6379:6379"
+
+  frontend:
+    image: node:20
+    container_name: newsedge-frontend
+    working_dir: /frontend
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5173"
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/frontend
+    depends_on:
+      - api
+
+volumes:
+  pg_data:
