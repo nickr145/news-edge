@@ -15,6 +15,7 @@ class ArticleOut(BaseModel):
     sentiment_label: str | None = None
     compound: float | None = None
     relevance_score: float | None = None
+    source_weight: float | None = None
 
 
 class SentimentSummaryOut(BaseModel):

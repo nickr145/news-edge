@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 export default function TickerSearch() {
-  const [symbol, setSymbol] = useState('NVDA')
+  const [symbol, setSymbol] = useState('')
   const navigate = useNavigate()
 
   const onSubmit = (e) => {
@@ -13,18 +13,19 @@ export default function TickerSearch() {
   }
 
   return (
-    <form className="card search-card" onSubmit={onSubmit}>
-      <label htmlFor="symbol">Ticker</label>
-      <div className="row">
+    <form className="search-form" onSubmit={onSubmit}>
+      <div className="search-input-row">
         <input
-          id="symbol"
+          className="search-input"
           value={symbol}
           onChange={(e) => setSymbol(e.target.value)}
           placeholder="AAPL"
           maxLength={10}
+          autoFocus
         />
-        <button type="submit">Open Dashboard</button>
+        <button type="submit" className="btn-open">Open</button>
       </div>
+      <span className="search-hint">Try AAPL · NVDA · TSLA · MSFT · AMZN</span>
     </form>
   )
 }

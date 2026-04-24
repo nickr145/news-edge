@@ -4,19 +4,22 @@ import TickerPage from './pages/TickerPage'
 
 export default function App() {
   return (
-    <div className="app-shell">
+    <>
       <header className="topbar">
-        <h1>NewsEdge</h1>
-        <nav>
+        <Link to="/" className="nav-brand">
+          <div className="nav-mark">NE</div>
+          <span className="nav-name">NewsEdge</span>
+        </Link>
+        <nav className="nav-links">
           <Link to="/">Search</Link>
         </nav>
       </header>
-      <main className="layout">
+      <div className="app-content">
         <Routes>
           <Route path="/" element={<SearchPage />} />
           <Route path="/ticker/:symbol" element={<TickerPage />} />
         </Routes>
-      </main>
-    </div>
+      </div>
+    </>
   )
 }

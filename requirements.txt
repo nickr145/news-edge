@@ -5,6 +5,7 @@ pydantic-settings==2.10.1
 websockets==15.0.1
 psycopg2-binary==2.9.10
 vaderSentiment==3.3.2
+transformers==4.56.0
 redis==6.4.0
 celery==5.5.3
 httpx==0.28.1
