@@ -1,4 +1,5 @@
 from celery import Celery
+from celery.schedules import crontab
 
 from app.core.config import get_settings
 
@@ -17,4 +18,17 @@ celery_app.conf.update(
     accept_content=["json"],
     timezone="UTC",
     enable_utc=True,
+    beat_schedule={
+        # Refresh price labels daily at 1:00 UTC (markets closed, bars are final).
+        "refresh-price-labels-daily": {
+            "task": "newsedge.refresh_price_labels",
+            "schedule": crontab(hour=1, minute=0),
+        },
+        # Retrain prediction model weekly on Monday at 3:00 UTC
+        # (after price labels have been refreshed the night before).
+        "retrain-models-weekly": {
+            "task": "newsedge.retrain_models",
+            "schedule": crontab(day_of_week=1, hour=3, minute=0),
+        },
+    },
 )

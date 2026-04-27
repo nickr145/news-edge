@@ -88,9 +88,10 @@ def backfill_web_news_for_ticker(
     company_name: str | None = None,
     days: int = 30,
     limit: int = 100,
-    sentiment_model: str = "vader",
+    sentiment_model: str | None = None,
 ) -> int:
     ticker = ticker.upper()
+    sentiment_model = sentiment_model or get_settings().sentiment_model
     queries = _build_queries(ticker, company_name)
 
     with httpx.Client(timeout=20, follow_redirects=True) as client:
