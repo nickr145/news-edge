@@ -4,7 +4,9 @@ from app.db.init_db import init_db
 from app.db.session import SessionLocal
 from app.main import app
 from app.models.article import Article, ArticleTicker
+from app.models.earnings import EarningsEvent
 from app.models.prediction import Prediction
+from app.models.sec_filing import SecFiling
 from app.models.sentiment import SentimentScore
 
 
@@ -12,7 +14,9 @@ def _reset_db() -> None:
     init_db()
     with SessionLocal() as db:
         db.query(SentimentScore).delete()
+        db.query(SecFiling).delete()
         db.query(ArticleTicker).delete()
+        db.query(EarningsEvent).delete()
         db.query(Prediction).delete()
         db.query(Article).delete()
         db.commit()
@@ -70,8 +74,7 @@ def test_subscribe_endpoint_with_backfill_window():
         assert payload["ticker"] == "NVDA"
         assert "NVDA" in payload["subscribed_tickers"]
         assert payload["backfill_days"] == 30
-        assert "alpaca_backfill_error" in payload
-        assert "web_backfill_error" in payload
+        assert payload["status"] == "backfill_queued"
 
 
 def test_price_risk_endpoint_shape():

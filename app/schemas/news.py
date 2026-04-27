@@ -10,12 +10,15 @@ class ArticleOut(BaseModel):
     url: str
     headline: str
     summary: str | None
+    body: str | None = None
     source: str | None
     published_at: datetime
     sentiment_label: str | None = None
     compound: float | None = None
     relevance_score: float | None = None
     source_weight: float | None = None
+    near_earnings: bool | None = None
+    is_sec_filing: bool | None = None
 
 
 class SentimentSummaryOut(BaseModel):

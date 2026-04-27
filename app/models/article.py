@@ -14,6 +14,7 @@ class Article(Base):
     url: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     headline: Mapped[str] = mapped_column(Text, nullable=False)
     summary: Mapped[str] = mapped_column(Text, nullable=True, default="")
+    body: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     source: Mapped[str] = mapped_column(String(100), nullable=True)
     published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ingested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

@@ -60,7 +60,13 @@ export default function TickerPage() {
       params: { backfill_days: windowDays, web_backfill: true }
     }).catch(() => {})
     load().finally(() => setLoading(false))
-    const id = setInterval(() => { load() }, 8000)
+
+    // Poll at 30s — the WebSocket handles live article delivery;
+    // polling just keeps sentiment/risk/trend fresh.
+    // Pause when the tab is hidden so we don't burn requests in the background.
+    const id = setInterval(() => {
+      if (!document.hidden) load()
+    }, 30000)
     return () => clearInterval(id)
   }, [ticker, windowDays, minRelevance])
 
