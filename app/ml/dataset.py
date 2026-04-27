@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.models.sentiment import SentimentScore
 from app.services.price_data import fetch_bars_dataframe
-from app.utils.stats import mean, std
+from app.utils.stats import ewma as compute_ewma, mean, std
 
 
 def build_training_dataset(db: Session, ticker: str, days: int = 365) -> pd.DataFrame:
@@ -27,8 +27,14 @@ def build_training_dataset(db: Session, ticker: str, days: int = 365) -> pd.Data
     sentiment_df["day"] = pd.to_datetime(sentiment_df["scored_at"], utc=True).dt.floor("D")
 
     day_groups = sentiment_df.groupby("day")["compound"].apply(list).reset_index(name="scores")
-    day_groups["ewma_sentiment_1d"] = day_groups["scores"].apply(lambda x: x[-1] if x else 0.0)
-    day_groups["ewma_sentiment_7d"] = day_groups["scores"].apply(lambda x: sum(x) / len(x) if x else 0.0)
+    # ewma_sentiment_1d: intraday EWMA — matches inference-time get_sentiment_summary(days=1).ewma_compound
+    day_groups["ewma_sentiment_1d"] = day_groups["scores"].apply(
+        lambda x: compute_ewma(x) if x else 0.0
+    )
+    # ewma_sentiment_7d: 7-day exponential average of daily means — matches inference-time days=7 window
+    day_groups["daily_mean"] = day_groups["scores"].apply(lambda x: sum(x) / len(x) if x else 0.0)
+    day_groups = day_groups.sort_values("day").reset_index(drop=True)
+    day_groups["ewma_sentiment_7d"] = day_groups["daily_mean"].ewm(span=7, min_periods=1).mean()
     day_groups["sentiment_volatility"] = day_groups["scores"].apply(std)
     day_groups["article_volume_24h"] = day_groups["scores"].apply(len)
 
@@ -56,12 +62,12 @@ def build_training_dataset(db: Session, ticker: str, days: int = 365) -> pd.Data
 
     def label(fr: float) -> str:
         if pd.isna(fr):
-            return "HOLD"
+            return "STABLE"
         if fr > 0.02:
-            return "BUY"
+            return "RISE"
         if fr < -0.02:
-            return "SELL"
-        return "HOLD"
+            return "FALL"
+        return "STABLE"
 
     bars["target"] = bars["forward_return"].apply(label)
 

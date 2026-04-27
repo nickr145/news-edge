@@ -2,12 +2,13 @@ import TickerSearch from '../components/TickerSearch'
 
 export default function SearchPage() {
   return (
-    <section className="hero">
-      <div>
-        <p className="eyebrow">Financial News + NLP Signals</p>
-        <h2>Track sentiment in real time, then score BUY/HOLD/SELL</h2>
+    <div className="search-hero">
+      <div className="hero-logotype">
+        <div className="hero-mark">NE</div>
+        <h1 className="hero-title">NewsEdge</h1>
+        <p className="hero-sub">Financial news intelligence — sentiment signals, risk metrics, and ML-powered recommendations.</p>
       </div>
       <TickerSearch />
-    </section>
+    </div>
   )
 }

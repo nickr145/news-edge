@@ -39,13 +39,13 @@ def test_news_sentiment_prediction_flow():
         created_payload = create.json()
         assert created_payload["ok"] is True
 
-        news = client.get("/api/news/NVDA")
+        news = client.get("/api/news/NVDA", params={"include_mock": "true"})
         assert news.status_code == 200
         news_rows = news.json()
         assert len(news_rows) >= 1
         assert any("NVIDIA" in row["headline"] for row in news_rows)
 
-        sentiment = client.get("/api/news/NVDA/sentiment")
+        sentiment = client.get("/api/news/NVDA/sentiment", params={"include_mock": "true"})
         assert sentiment.status_code == 200
         sentiment_payload = sentiment.json()
         assert sentiment_payload["ticker"] == "NVDA"
@@ -55,7 +55,7 @@ def test_news_sentiment_prediction_flow():
         assert predict.status_code == 200
         prediction = predict.json()
         assert prediction["ticker"] == "NVDA"
-        assert prediction["recommendation"] in {"BUY", "HOLD", "SELL"}
+        assert prediction["recommendation"] in {"RISE", "STABLE", "FALL"}
         assert isinstance(prediction["feature_importances"], dict)
         assert "ewma_sentiment_1d" in prediction["feature_importances"]
 
@@ -70,6 +70,8 @@ def test_subscribe_endpoint_with_backfill_window():
         assert payload["ticker"] == "NVDA"
         assert "NVDA" in payload["subscribed_tickers"]
         assert payload["backfill_days"] == 30
+        assert "alpaca_backfill_error" in payload
+        assert "web_backfill_error" in payload
 
 
 def test_price_risk_endpoint_shape():
@@ -81,3 +83,17 @@ def test_price_risk_endpoint_shape():
         assert "beta_to_benchmark" in payload
         assert "max_drawdown" in payload
         assert "high_water_mark" in payload
+
+
+def test_source_breakdown_endpoint():
+    _reset_db()
+    with TestClient(app) as client:
+        client.post(
+            "/api/news/mock/NVDA",
+            params={"headline": "NVIDIA beats expectations", "summary": "Strong GPU demand"},
+        )
+        response = client.get("/api/news/NVDA/sources", params={"include_mock": "true"})
+        assert response.status_code == 200
+        payload = response.json()
+        assert isinstance(payload, list)
+        assert payload[0]["source"] == "mock"

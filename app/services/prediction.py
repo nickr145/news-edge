@@ -69,6 +69,15 @@ def _build_inference_row(db: Session, ticker: str) -> InferenceFeatureRow:
     )
 
 
+def _normalize_label(label: str) -> str:
+    mapped = {
+        "BUY": "RISE",
+        "SELL": "FALL",
+        "HOLD": "STABLE",
+    }
+    return mapped.get((label or "").upper(), (label or "STABLE").upper())
+
+
 def train_or_load_model(db: Session, ticker: str):
     settings = get_settings()
     bundle = load_bundle()
@@ -103,14 +112,26 @@ def run_prediction(db: Session, ticker: str, horizon_days: int | None = None) ->
 
     bundle = train_or_load_model(db, ticker=ticker)
     if bundle is None:
-        recommendation = "HOLD"
-        confidence = 0.5
+        s = feature_row.ewma_sentiment_1d
+        if s > 0.15:
+            recommendation = "RISE"
+        elif s < -0.15:
+            recommendation = "FALL"
+        else:
+            recommendation = "STABLE"
+        confidence = min(0.85, 0.52 + abs(s) * 0.35)
         feature_importances = row_dict
+        feature_importances["__model"] = {"version": "fallback_rule_v2", "reason": "insufficient_or_missing_model"}
     else:
         proba = predict_proba_row(bundle, row_dict)
-        recommendation = max(proba, key=proba.get)
-        confidence = float(proba[recommendation])
-        feature_importances = explain_row(bundle, row_dict, recommendation)
+        raw_label = max(proba, key=proba.get)
+        recommendation = _normalize_label(raw_label)
+        raw_confidence = float(proba[raw_label])
+        model_ece = float((getattr(bundle, "metadata", {}) or {}).get("metrics", {}).get("val_ece", 0.0))
+        confidence = max(0.0, min(1.0, raw_confidence * (1.0 - model_ece)))
+        feature_importances = explain_row(bundle, row_dict, raw_label)
+        feature_importances["__model"] = getattr(bundle, "metadata", {})
+        feature_importances["__raw_confidence"] = raw_confidence
 
     prediction = Prediction(
         ticker=ticker,

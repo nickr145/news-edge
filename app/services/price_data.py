@@ -69,9 +69,12 @@ def fetch_bars_dataframe(ticker: str, days: int = 365) -> pd.DataFrame:
     }
 
     with httpx.Client(timeout=15) as client:
-        response = client.get(url, params=params, headers=headers)
-        response.raise_for_status()
-        payload = response.json()
+        try:
+            response = client.get(url, params=params, headers=headers)
+            response.raise_for_status()
+            payload = response.json()
+        except Exception:
+            return pd.DataFrame()
 
     bars = payload.get("bars", [])
     if not bars:

@@ -10,6 +10,7 @@ from app.core.config import get_settings
 from app.models.article import Article, ArticleTicker
 from app.models.sentiment import SentimentScore
 from app.services.sentiment import get_sentiment_engine
+from app.utils.news_quality import dedup_key
 
 
 def _parse_timestamp(value: str | None) -> datetime:
@@ -23,6 +24,12 @@ def _parse_timestamp(value: str | None) -> datetime:
 
 def _to_rfc3339(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _existing_signature_map(db: Session, since_days: int = 60) -> set[str]:
+    since = datetime.now(timezone.utc) - timedelta(days=since_days)
+    rows = db.execute(select(Article.headline, Article.source).where(Article.published_at >= since)).all()
+    return {dedup_key(headline or "", source) for headline, source in rows}
 
 
 def backfill_news_for_ticker(db: Session, ticker: str, days: int = 30, limit: int = 200) -> int:
@@ -41,6 +48,7 @@ def backfill_news_for_ticker(db: Session, ticker: str, days: int = 30, limit: in
     url = "https://data.alpaca.markets/v1beta1/news"
     inserted = 0
     engine = get_sentiment_engine(settings.sentiment_model)
+    existing_signatures = _existing_signature_map(db)
     remaining = min(max(limit, 1), 1000)
     page_token: str | None = None
     per_page = min(50, remaining)
@@ -66,6 +74,7 @@ def backfill_news_for_ticker(db: Session, ticker: str, days: int = 30, limit: in
             if not news_rows:
                 break
 
+            candidates: list[dict] = []
             for item in news_rows:
                 article_url = item.get("url")
                 if not article_url:
@@ -74,7 +83,18 @@ def backfill_news_for_ticker(db: Session, ticker: str, days: int = 30, limit: in
                 existing = db.scalar(select(Article).where(Article.url == article_url))
                 if existing:
                     continue
+                signature = dedup_key(item.get("headline") or "", item.get("source"))
+                if signature in existing_signatures:
+                    continue
+                item["_signature"] = signature
+                candidates.append(item)
 
+            sentiments = engine.score_many(
+                [(item.get("headline") or "", item.get("summary") or "") for item in candidates]
+            )
+
+            for item, sentiment in zip(candidates, sentiments, strict=False):
+                article_url = item.get("url")
                 article = Article(
                     external_id=str(item.get("id")) if item.get("id") is not None else None,
                     url=article_url,
@@ -93,7 +113,6 @@ def backfill_news_for_ticker(db: Session, ticker: str, days: int = 30, limit: in
                 for symbol in symbols:
                     db.add(ArticleTicker(article_id=article.id, ticker=symbol))
 
-                sentiment = engine.score(article.headline, article.summary)
                 for symbol in symbols:
                     db.add(
                         SentimentScore(
@@ -109,6 +128,7 @@ def backfill_news_for_ticker(db: Session, ticker: str, days: int = 30, limit: in
                     )
 
                 inserted += 1
+                existing_signatures.add(item["_signature"])
 
             remaining -= len(news_rows)
             page_token = payload.get("next_page_token")
