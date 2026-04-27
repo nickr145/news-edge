@@ -195,7 +195,7 @@ def create_mock_article(ticker: str, headline: str, summary: str = "", db: Sessi
     db.flush()
     db.add(ArticleTicker(article_id=article.id, ticker=ticker))
 
-    sentiment = get_sentiment_engine("vader").score(headline, summary)
+    sentiment = get_sentiment_engine(settings.sentiment_model).score(headline, summary)
     db.add(
         SentimentScore(
             article_id=article.id,

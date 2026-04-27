@@ -77,7 +77,7 @@ def backfill_sec_filings(
     ticker: str,
     days: int = 365,
     limit: int = 30,
-    sentiment_model: str = "vader",
+    sentiment_model: str | None = None,
 ) -> int:
     """Fetch recent 8-K / 10-K / 10-Q filings from EDGAR and persist them.
 
@@ -85,6 +85,7 @@ def backfill_sec_filings(
     """
     settings = get_settings()
     ticker = ticker.upper()
+    sentiment_model = sentiment_model or settings.sentiment_model
     target_forms: set[str] = {
         f.strip().upper()
         for f in settings.sec_filing_forms.split(",")

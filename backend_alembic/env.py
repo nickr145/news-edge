@@ -7,7 +7,7 @@ from sqlalchemy import engine_from_config, pool
 
 from app.core.config import get_settings
 from app.db.base import Base
-from app.models import article, earnings, prediction, sec_filing, sentiment
+from app.models import article, earnings, prediction, price_label, sec_filing, sentiment
 
 config = context.config
 settings = get_settings()

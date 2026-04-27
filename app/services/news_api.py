@@ -156,11 +156,12 @@ def backfill_news_api_articles(
     company_name: str | None = None,
     days: int = 30,
     limit: int = 100,
-    sentiment_model: str = "vader",
+    sentiment_model: str | None = None,
 ) -> int:
     """Fetch from Finnhub + NewsAPI, deduplicate, scrape bodies, persist."""
     settings = get_settings()
     ticker = ticker.upper()
+    sentiment_model = sentiment_model or settings.sentiment_model
 
     finnhub_items = _fetch_finnhub(ticker, days=days, limit=limit)
     newsapi_items = _fetch_newsapi(ticker, company_name=company_name, days=days, limit=limit)
