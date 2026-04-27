@@ -1,15 +1,20 @@
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.db.session import get_db
+from app.db.session import SessionLocal, get_db
 from app.core.config import get_settings
 from app.models.article import Article, ArticleTicker
 from app.models.sentiment import SentimentScore
 from app.schemas.news import ArticleOut, SentimentSummaryOut, SentimentTrendOut
 from app.services.backfill import backfill_news_for_ticker
+from app.services.earnings import backfill_earnings, tag_articles_near_earnings
+from app.services.news_api import backfill_news_api_articles
+from app.services.sec_filings import backfill_sec_filings
 from app.services.sentiment import get_sentiment_engine
 from app.services.analytics import get_articles_for_ticker, get_sentiment_summary, get_sentiment_trend, get_source_breakdown
 from app.services.runtime import news_ingestion
@@ -17,6 +22,55 @@ from app.services.web_backfill import backfill_web_news_for_ticker
 
 router = APIRouter(prefix="/api/news", tags=["news"])
 settings = get_settings()
+
+# Shared executor so threads are reused across requests, not spawned fresh each time.
+_backfill_executor = ThreadPoolExecutor(max_workers=10, thread_name_prefix="backfill")
+
+
+async def _run_backfill_concurrent(
+    ticker: str,
+    company_name: str | None,
+    backfill_days: int,
+    backfill_limit: int,
+    do_web_backfill: bool,
+) -> None:
+    """Run all backfill sources concurrently; each stage owns its own DB session."""
+    loop = asyncio.get_event_loop()
+
+    def _alpaca() -> None:
+        with SessionLocal() as db:
+            backfill_news_for_ticker(db, ticker=ticker, days=backfill_days, limit=backfill_limit)
+
+    def _news_api() -> None:
+        with SessionLocal() as db:
+            backfill_news_api_articles(
+                db, ticker=ticker, company_name=company_name,
+                days=backfill_days, limit=min(backfill_limit, 200),
+            )
+
+    def _web() -> None:
+        if not (do_web_backfill and settings.enable_web_backfill):
+            return
+        with SessionLocal() as db:
+            backfill_web_news_for_ticker(
+                db, ticker=ticker, company_name=company_name,
+                days=backfill_days, limit=min(backfill_limit, 300),
+            )
+
+    def _earnings() -> None:
+        with SessionLocal() as db:
+            backfill_earnings(db, ticker=ticker)
+            tag_articles_near_earnings(db, ticker=ticker)
+
+    def _sec() -> None:
+        with SessionLocal() as db:
+            backfill_sec_filings(db, ticker=ticker)
+
+    stages = [_alpaca, _news_api, _web, _earnings, _sec]
+    await asyncio.gather(
+        *[loop.run_in_executor(_backfill_executor, fn) for fn in stages],
+        return_exceptions=True,  # one failing stage never blocks the others
+    )
 
 
 @router.get("/subscriptions")
@@ -82,42 +136,29 @@ def ticker_trend(
 @router.post("/subscribe/{ticker}")
 async def subscribe_ticker(
     ticker: str,
+    background_tasks: BackgroundTasks,
     backfill_days: int = Query(30, ge=1, le=365),
     backfill_limit: int = Query(200, ge=1, le=500),
     company_name: str | None = Query(None),
     web_backfill: bool = Query(True),
-    db: Session = Depends(get_db),
 ):
     tickers = await news_ingestion.subscribe_ticker(ticker)
-    inserted = 0
-    web_inserted = 0
-    alpaca_backfill_error = None
-    web_backfill_error = None
-    try:
-        inserted = backfill_news_for_ticker(db, ticker=ticker, days=backfill_days, limit=backfill_limit)
-    except Exception as exc:
-        alpaca_backfill_error = str(exc)
-
-    try:
-        if web_backfill and settings.enable_web_backfill:
-            web_inserted = backfill_web_news_for_ticker(
-                db,
-                ticker=ticker,
-                company_name=company_name,
-                days=backfill_days,
-                limit=min(backfill_limit, 300),
-            )
-    except Exception as exc:
-        web_backfill_error = str(exc)
+    # Queue all backfill to run concurrently in the background.
+    # Returns immediately so the UI is never blocked waiting for external APIs.
+    background_tasks.add_task(
+        _run_backfill_concurrent,
+        ticker=ticker.upper(),
+        company_name=company_name,
+        backfill_days=backfill_days,
+        backfill_limit=backfill_limit,
+        do_web_backfill=web_backfill,
+    )
     return {
         "ok": True,
         "ticker": ticker.upper(),
         "subscribed_tickers": tickers,
         "backfill_days": backfill_days,
-        "backfilled_articles": inserted,
-        "web_backfilled_articles": web_inserted,
-        "alpaca_backfill_error": alpaca_backfill_error,
-        "web_backfill_error": web_backfill_error,
+        "status": "backfill_queued",
     }
 
 

@@ -27,6 +27,13 @@ class Settings(BaseSettings):
     enable_web_backfill: bool = True
     web_backfill_sources: str = "reuters.com,cnbc.com,finance.yahoo.com,marketwatch.com,fool.com,investopedia.com,barrons.com"
 
+    finnhub_api_key: str = ""
+    newsapi_key: str = ""
+    enable_body_scraping: bool = True
+    body_scrape_timeout: int = 6
+    # Comma-separated SEC form types to ingest (e.g. "8-K,10-K,10-Q")
+    sec_filing_forms: str = "8-K,10-K,10-Q"
+
     sentiment_model: str = "vader"  # finbert | vader
     prediction_horizon_days: int = 5
     model_artifact_path: str = "./artifacts/xgb_recommendation.joblib"

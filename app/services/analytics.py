@@ -29,6 +29,8 @@ def get_articles_for_ticker(
     if days is not None:
         since = datetime.now(timezone.utc) - timedelta(days=days)
 
+    # Overfetch so Python-side dedup/relevance filtering doesn't under-deliver vs. the requested limit.
+    db_limit = max(limit * 4, 400)
     stmt = (
         select(Article, SentimentScore)
         .join(ArticleTicker, ArticleTicker.article_id == Article.id)
@@ -38,7 +40,7 @@ def get_articles_for_ticker(
         )
         .where(ArticleTicker.ticker == ticker)
         .order_by(Article.published_at.desc())
-        .limit(limit)
+        .limit(db_limit)
         .offset(offset)
     )
     if since is not None:
@@ -52,6 +54,8 @@ def get_articles_for_ticker(
     seen: set[str] = set()
     out: list[ArticleOut] = []
     for article, sentiment in rows:
+        if len(out) >= limit:
+            break
         key = dedup_key(article.headline or "", article.source)
         if key in seen:
             continue
@@ -65,18 +69,22 @@ def get_articles_for_ticker(
         if relevance < min_relevance:
             continue
         weight = source_weight(article.source)
+        payload = article.raw_payload or {}
         out.append(
             ArticleOut(
                 id=article.id,
                 url=article.url,
                 headline=article.headline,
                 summary=article.summary,
+                body=article.body,
                 source=article.source,
                 published_at=article.published_at,
                 sentiment_label=sentiment.label if sentiment else None,
                 compound=float(sentiment.compound) if sentiment else None,
                 relevance_score=float(round(relevance, 4)),
                 source_weight=float(round(weight, 4)),
+                near_earnings=payload.get("near_earnings") or None,
+                is_sec_filing=payload.get("is_sec_filing") or None,
             )
         )
     return out
@@ -153,7 +161,7 @@ def get_sentiment_trend(
     stmt = (
         select(
             SentimentScore.article_id,
-            SentimentScore.scored_at,
+            Article.published_at,
             SentimentScore.compound,
             Article.headline,
             Article.summary,
@@ -161,8 +169,8 @@ def get_sentiment_trend(
         )
         .join(Article, Article.id == SentimentScore.article_id)
         .where(SentimentScore.ticker == ticker)
-        .where(SentimentScore.scored_at >= since)
-        .order_by(SentimentScore.scored_at.asc())
+        .where(Article.published_at >= since)
+        .order_by(Article.published_at.asc())
     )
     if not include_mock:
         stmt = stmt.where((Article.source.is_(None)) | (Article.source != "mock"))
@@ -172,7 +180,7 @@ def get_sentiment_trend(
 
     buckets: dict[datetime, list[float]] = defaultdict(list)
     seen: set[str] = set()
-    for article_id, scored_at, compound, headline, summary, src in rows:
+    for article_id, published_at, compound, headline, summary, src in rows:
         key = dedup_key(headline or "", src)
         if key in seen:
             continue
@@ -185,7 +193,7 @@ def get_sentiment_trend(
         )
         if relevance < min_relevance:
             continue
-        dt = scored_at.replace(minute=0, second=0, microsecond=0)
+        dt = published_at.replace(hour=0, minute=0, second=0, microsecond=0)
         buckets[dt].append(float(compound) * source_weight(src))
 
     points: list[SentimentTrendPoint] = []
