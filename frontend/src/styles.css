@@ -147,47 +147,83 @@ body {
   line-height: 1.55;
 }
 
-.search-form {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.75rem;
+.ticker-search-wrap {
+  position: relative;
   width: 100%;
-  max-width: 400px;
+  max-width: 560px;
 }
 
-.search-input-row {
-  display: flex;
-  gap: 0.5rem;
+.ticker-search-input {
   width: 100%;
-}
-
-.search-input {
-  flex: 1;
-  height: 48px;
+  height: 54px;
   background: var(--surface);
   border: 1px solid var(--border-mid);
   border-radius: var(--r);
   color: var(--text);
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 1.1rem;
+  font-size: 1rem;
   font-weight: 500;
-  padding: 0 1rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  padding: 0 1.25rem;
+  box-sizing: border-box;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
-.search-input:focus {
+
+.ticker-search-input:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-dim);
 }
-.search-input::placeholder { text-transform: uppercase; letter-spacing: 0.06em; }
 
-.search-hint {
+.ticker-search-input::placeholder {
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: 0.9rem;
+}
+
+.ticker-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: var(--surface);
+  border: 1px solid var(--border-mid);
+  border-radius: var(--r);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  z-index: 100;
+}
+
+.ticker-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.65rem 1.25rem;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.ticker-dropdown-item:not(:last-child) {
+  border-bottom: 1px solid var(--border);
+}
+
+.ticker-dropdown-item.active,
+.ticker-dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.ticker-dropdown-symbol {
   font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  min-width: 56px;
+}
+
+.ticker-dropdown-name {
+  font-size: 0.85rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ── Card ──────────────────────────────────────────── */
@@ -634,6 +670,105 @@ body {
   color: var(--muted);
   font-family: 'JetBrains Mono', monospace;
   margin-left: auto;
+}
+
+/* ── Watchlist ─────────────────────────────────────── */
+.watchlist-section {
+  margin-top: 2rem;
+  width: 100%;
+  max-width: 720px;
+}
+
+.watchlist-header {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.75rem;
+}
+
+.watchlist-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.75rem;
+}
+
+.watchlist-card {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  transition: border-color 0.15s;
+}
+
+.watchlist-card:hover {
+  border-color: rgba(255,255,255,0.18);
+}
+
+.watchlist-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.watchlist-ticker {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #f1f5f9;
+  text-decoration: none;
+  letter-spacing: 0.04em;
+}
+
+.watchlist-ticker:hover { color: var(--accent); }
+
+.watchlist-remove {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  transition: color 0.15s;
+}
+
+.watchlist-remove:hover { color: var(--danger); }
+
+.watchlist-stats { display: flex; gap: 0.75rem; }
+
+/* ── Watchlist button (ticker header) ──────────────── */
+.btn-watchlist {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.3rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  letter-spacing: 0.04em;
+}
+
+.btn-watchlist:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.btn-watchlist.watched {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
+/* ── Horizon row (PredictionCard) ──────────────────── */
+.horizon-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
 }
 
 /* ── Responsive ────────────────────────────────────── */
