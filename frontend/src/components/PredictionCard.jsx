@@ -19,6 +19,7 @@ function ShapChart({ importances }) {
     .filter(([k]) => !k.startsWith('__'))
     .map(([k, v]) => ({ key: k, label: FEATURE_LABELS[k] || k, value: Number(v) }))
     .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
+    .slice(0, 5)
 
   if (!entries.length) return null
 
@@ -47,7 +48,7 @@ function ShapChart({ importances }) {
   )
 }
 
-export default function PredictionCard({ prediction, onPredict, predicting }) {
+export default function PredictionCard({ prediction, onPredict, predicting, horizonDays, onHorizonChange }) {
   const rec = prediction?.recommendation?.toLowerCase() || ''
   const confidence = prediction ? (prediction.confidence * 100).toFixed(1) : 0
 
@@ -83,6 +84,18 @@ export default function PredictionCard({ prediction, onPredict, predicting }) {
       ) : (
         <p className="muted-text" style={{ marginBottom: '0.75rem' }}>Run a prediction to see a BUY / HOLD / SELL signal.</p>
       )}
+      <div className="horizon-row">
+        <span className="ctrl-label">Horizon</span>
+        <select
+          className="ctrl-select"
+          value={horizonDays}
+          onChange={(e) => onHorizonChange(Number(e.target.value))}
+        >
+          <option value={1}>1 day</option>
+          <option value={5}>5 days</option>
+          <option value={14}>14 days</option>
+        </select>
+      </div>
       <button className="btn-primary" onClick={onPredict} disabled={predicting}>
         {predicting ? 'Analyzing…' : 'Run Prediction'}
       </button>

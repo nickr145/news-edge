@@ -2,21 +2,26 @@ import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import NewsFeed from '../components/NewsFeed'
 import PredictionCard from '../components/PredictionCard'
+import PriceChart from '../components/PriceChart'
 import RiskPanel from '../components/RiskPanel'
 import SentimentPanel from '../components/SentimentPanel'
+import { useWatchlist } from '../hooks/useWatchlist'
 import { api, newsSocketUrl } from '../lib/api'
 
 export default function TickerPage() {
   const { symbol } = useParams()
   const ticker = useMemo(() => String(symbol || '').toUpperCase(), [symbol])
+  const { isWatched, toggle } = useWatchlist()
 
   const [articles, setArticles] = useState([])
   const [summary, setSummary] = useState(null)
   const [trend, setTrend] = useState(null)
+  const [bars, setBars] = useState([])
   const [prediction, setPrediction] = useState(null)
   const [risk, setRisk] = useState(null)
   const [windowDays, setWindowDays] = useState(30)
   const [minRelevance, setMinRelevance] = useState(0.35)
+  const [horizonDays, setHorizonDays] = useState(5)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [predicting, setPredicting] = useState(false)
@@ -35,17 +40,20 @@ export default function TickerPage() {
 
   const load = async () => {
     const trendHours = Math.min(windowDays * 24, 24 * 30)
+    const barLimit = Math.max(windowDays, 30)
     try {
-      const [newsRes, summaryRes, trendRes, riskRes] = await Promise.all([
+      const [newsRes, summaryRes, trendRes, riskRes, barsRes] = await Promise.all([
         api.get(`/api/news/${ticker}`, { params: { days: windowDays, limit: 100, min_relevance: minRelevance, include_mock: false } }),
         api.get(`/api/news/${ticker}/sentiment`, { params: { days: windowDays, min_relevance: minRelevance, include_mock: false } }),
         api.get(`/api/news/${ticker}/trend`, { params: { hours: trendHours, min_relevance: minRelevance, include_mock: false } }),
-        api.get(`/api/price/${ticker}/risk`, { params: { benchmark: 'SPY', days: 365 } })
+        api.get(`/api/price/${ticker}/risk`, { params: { benchmark: 'SPY', days: 365 } }),
+        api.get(`/api/price/${ticker}/bars`, { params: { limit: barLimit } }),
       ])
       setArticles(dedupeArticles(newsRes.data))
       setSummary(summaryRes.data)
       setTrend(trendRes.data)
       setRisk(riskRes.data)
+      setBars(barsRes.data || [])
       setError(null)
     } catch {
       setError('Failed to load data. Retrying…')
@@ -61,9 +69,6 @@ export default function TickerPage() {
     }).catch(() => {})
     load().finally(() => setLoading(false))
 
-    // Poll at 30s — the WebSocket handles live article delivery;
-    // polling just keeps sentiment/risk/trend fresh.
-    // Pause when the tab is hidden so we don't burn requests in the background.
     const id = setInterval(() => {
       if (!document.hidden) load()
     }, 30000)
@@ -88,7 +93,7 @@ export default function TickerPage() {
     if (predicting) return
     setPredicting(true)
     try {
-      const queued = await api.post(`/api/predict/${ticker}/sync`, { horizon_days: 5 })
+      const queued = await api.post(`/api/predict/${ticker}/sync`, { horizon_days: horizonDays })
       setPrediction(queued.data)
       setError(null)
     } catch {
@@ -98,6 +103,8 @@ export default function TickerPage() {
     }
   }
 
+  const watched = isWatched(ticker)
+
   return (
     <div className="ticker-page">
       <div className="ticker-header">
@@ -106,6 +113,13 @@ export default function TickerPage() {
           <div className="ticker-tagline">Sentiment intelligence · Live feed</div>
         </div>
         <div className="ticker-controls">
+          <button
+            className={`btn-watchlist ${watched ? 'watched' : ''}`}
+            onClick={() => toggle(ticker)}
+            title={watched ? 'Remove from watchlist' : 'Add to watchlist'}
+          >
+            {watched ? '★ Watching' : '☆ Watch'}
+          </button>
           <span className="ctrl-label">Window</span>
           <select className="ctrl-select" value={windowDays} onChange={(e) => setWindowDays(Number(e.target.value))}>
             <option value={1}>1 day</option>
@@ -132,10 +146,17 @@ export default function TickerPage() {
 
       <div className="ticker-layout">
         <aside className="ticker-sidebar">
-          <PredictionCard prediction={prediction} onPredict={triggerPrediction} predicting={predicting} />
+          <PredictionCard
+            prediction={prediction}
+            onPredict={triggerPrediction}
+            predicting={predicting}
+            horizonDays={horizonDays}
+            onHorizonChange={setHorizonDays}
+          />
           <RiskPanel risk={risk} />
         </aside>
         <div className="ticker-main">
+          <PriceChart bars={bars} trend={trend} />
           <SentimentPanel summary={summary} trend={trend} />
           <NewsFeed articles={articles} loading={loading} />
         </div>
