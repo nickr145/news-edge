@@ -2,6 +2,8 @@
 
 Real-time stock news sentiment platform with historical backfill, live streaming ingestion, ticker relevance filtering, ML-powered predictions, risk analytics, and an interactive React dashboard.
 
+**Live:** https://news-edge-ai.vercel.app
+
 ## Features
 
 ### Data + Ingestion
