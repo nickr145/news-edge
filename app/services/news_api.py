@@ -1,4 +1,4 @@
-"""Real news API ingestion: Finnhub company-news + NewsAPI everything.
+"""Real news API ingestion: Finnhub company-news + Marketaux news search.
 
 Both sources return structured JSON with proper summaries, unlike the Google
 News RSS fallback which returns empty summaries. Body scraping is attempted
@@ -6,7 +6,6 @@ for each article (with a short timeout) so the body column is populated.
 """
 from __future__ import annotations
 
-import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -79,49 +78,38 @@ def _fetch_finnhub(ticker: str, days: int, limit: int) -> list[dict[str, Any]]:
     ]
 
 
-# ── NewsAPI ──────────────────────────────────────────────────────────────────
+# ── Marketaux ────────────────────────────────────────────────────────────────
 
-def _clean_newsapi_content(content: str) -> str:
-    """Strip the '[+N chars]' truncation suffix NewsAPI appends."""
-    return re.sub(r"\s*\[\+\d+ chars\]$", "", content or "").strip()
-
-
-def _fetch_newsapi(
+def _fetch_marketaux(
     ticker: str,
     company_name: str | None,
     days: int,
     limit: int,
 ) -> list[dict[str, Any]]:
     settings = get_settings()
-    if not settings.newsapi_key:
+    if not settings.marketaux_api_key:
         return []
 
-    parts = [ticker]
-    if company_name:
-        parts.append(f'"{company_name}"')
-    query = " OR ".join(parts) + " stock"
-
-    # NewsAPI free tier only supports queries up to 30 days back.
-    from_date = (datetime.now(timezone.utc) - timedelta(days=min(days, 29))).strftime("%Y-%m-%d")
+    published_after = (datetime.now(timezone.utc) - timedelta(days=days)).strftime(
+        "%Y-%m-%dT%H:%M:%S"
+    )
 
     try:
         r = httpx.get(
-            "https://newsapi.org/v2/everything",
+            "https://api.marketaux.com/v1/news/all",
             params={
-                "q": query,
-                "apiKey": settings.newsapi_key,
+                "symbols": ticker,
+                "api_token": settings.marketaux_api_key,
                 "language": "en",
-                "sortBy": "publishedAt",
-                "pageSize": min(limit, 100),
-                "from": from_date,
+                "sort": "published_desc",
+                "limit": min(limit, 100),
+                "published_after": published_after,
             },
             timeout=15,
         )
         r.raise_for_status()
         data = r.json()
-        if data.get("status") != "ok":
-            return []
-        articles_raw = data.get("articles") or []
+        articles_raw = data.get("data") or []
     except Exception:
         return []
 
@@ -129,20 +117,17 @@ def _fetch_newsapi(
     for art in articles_raw:
         title = art.get("title") or ""
         url = art.get("url") or ""
-        # Skip removed/deleted articles that NewsAPI marks with [Removed]
-        if not url or not title or "[Removed]" in title:
+        if not url or not title:
             continue
-        body_prefix = _clean_newsapi_content(art.get("content") or "")
         results.append(
             {
                 "headline": title,
                 "summary": art.get("description") or "",
                 "url": url,
-                "source": ((art.get("source") or {}).get("name") or "newsapi").lower(),
-                "published_at": _parse_ts(art.get("publishedAt")),
-                # NewsAPI gives us the first ~200 chars of body for free
-                "body": body_prefix,
-                "provider": "newsapi",
+                "source": (art.get("source") or "marketaux").lower(),
+                "published_at": _parse_ts(art.get("published_at")),
+                "body": art.get("snippet") or "",
+                "provider": "marketaux",
             }
         )
     return results
@@ -158,15 +143,15 @@ def backfill_news_api_articles(
     limit: int = 100,
     sentiment_model: str | None = None,
 ) -> int:
-    """Fetch from Finnhub + NewsAPI, deduplicate, scrape bodies, persist."""
+    """Fetch from Finnhub + Marketaux, deduplicate, scrape bodies, persist."""
     settings = get_settings()
     ticker = ticker.upper()
     sentiment_model = sentiment_model or settings.sentiment_model
 
     finnhub_items = _fetch_finnhub(ticker, days=days, limit=limit)
-    newsapi_items = _fetch_newsapi(ticker, company_name=company_name, days=days, limit=limit)
+    marketaux_items = _fetch_marketaux(ticker, company_name=company_name, days=days, limit=limit)
 
-    all_items = dedup_articles(finnhub_items + newsapi_items)
+    all_items = dedup_articles(finnhub_items + marketaux_items)
 
     # Pre-filter: only keep articles that actually mention the ticker or company.
     ticker_lower = ticker.lower()

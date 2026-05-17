@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { TICKERS } from '../data/tickers'
 
-export default function TickerSearch() {
+export default function TickerSearch({ compact = false }) {
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const [activeIdx, setActiveIdx] = useState(0)
@@ -73,9 +73,9 @@ export default function TickerSearch() {
   }, [])
 
   return (
-    <div className="ticker-search-wrap" ref={wrapperRef}>
+    <div className={`ticker-search-wrap${compact ? ' ticker-search-wrap--compact' : ''}`} ref={wrapperRef}>
       <input
-        className="ticker-search-input"
+        className={`ticker-search-input${compact ? ' ticker-search-input--compact' : ''}`}
         value={query}
         onChange={(e) => {
           setQuery(e.target.value)
@@ -84,8 +84,8 @@ export default function TickerSearch() {
         }}
         onFocus={() => { if (query) setOpen(true) }}
         onKeyDown={onKeyDown}
-        placeholder="Search ticker or company — AAPL, Amazon, NVDA…"
-        autoFocus
+        placeholder={compact ? 'Search ticker or company…' : 'Search ticker or company — AAPL, Amazon, NVDA…'}
+        autoFocus={!compact}
         autoComplete="off"
         spellCheck={false}
       />

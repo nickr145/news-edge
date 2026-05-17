@@ -1,8 +1,12 @@
-import { Link, Route, Routes } from 'react-router-dom'
+import { Link, Route, Routes, useLocation } from 'react-router-dom'
 import SearchPage from './pages/SearchPage'
 import TickerPage from './pages/TickerPage'
+import TickerSearch from './components/TickerSearch'
 
 export default function App() {
+  const location = useLocation()
+  const onHome = location.pathname === '/'
+
   return (
     <>
       <header className="topbar">
@@ -10,9 +14,7 @@ export default function App() {
           <div className="nav-mark">NE</div>
           <span className="nav-name">NewsEdge</span>
         </Link>
-        <nav className="nav-links">
-          <Link to="/">Search</Link>
-        </nav>
+        {!onHome && <TickerSearch compact />}
       </header>
       <div className="app-content">
         <Routes>

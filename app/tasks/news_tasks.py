@@ -40,7 +40,7 @@ def persist_and_score_event(event_id: str, payload: str, model_name: str = "vade
             url=url,
             headline=event.get("headline") or "",
             summary=event.get("summary") or "",
-            source=event.get("source") or "",
+            source=(event.get("source") or "").lower().strip(),
             published_at=published_at,
             raw_payload=event,
         )

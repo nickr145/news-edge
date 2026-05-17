@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     web_backfill_sources: str = "reuters.com,cnbc.com,finance.yahoo.com,marketwatch.com,fool.com,investopedia.com,barrons.com"
 
     finnhub_api_key: str = ""
-    newsapi_key: str = ""
+    marketaux_api_key: str = ""
     enable_body_scraping: bool = True
     body_scrape_timeout: int = 6
     # Comma-separated SEC form types to ingest (e.g. "8-K,10-K,10-Q")

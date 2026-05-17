@@ -178,6 +178,21 @@ body {
   font-size: 0.9rem;
 }
 
+.ticker-search-wrap--compact {
+  max-width: 300px;
+}
+
+.ticker-search-input--compact {
+  height: 36px;
+  font-size: 0.875rem;
+  padding: 0 1rem;
+  border-radius: 8px;
+}
+
+.ticker-search-input--compact::placeholder {
+  font-size: 0.8rem;
+}
+
 .ticker-dropdown {
   position: absolute;
   top: calc(100% + 6px);
