@@ -5,3 +5,8 @@ __pycache__/
 newsedge.db
 .pytest_cache/
 .mypy_cache/
+
+# Xcode
+ios/**/xcuserdata/
+*.xcuserstate
+DerivedData/
