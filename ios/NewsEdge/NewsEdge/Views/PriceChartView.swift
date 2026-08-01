@@ -8,6 +8,7 @@ import Charts
 struct PriceChartView: View {
     let bars: [PriceBar]
     let trend: SentimentTrend?
+    var isLoading: Bool = false
 
     private var calendar: Calendar { Calendar(identifier: .gregorian) }
 
@@ -30,9 +31,7 @@ struct PriceChartView: View {
             Text("Price & Sentiment").font(.headline)
 
             if chartBars.isEmpty {
-                Text("No price data available.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                LoadingOrEmptyView(isLoading: isLoading, message: "No price data available.")
             } else {
                 Chart(chartBars) { bar in
                     LineMark(

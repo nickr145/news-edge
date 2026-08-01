@@ -3,6 +3,7 @@ import SwiftUI
 /// Ports RiskPanel.jsx.
 struct RiskPanelView: View {
     let risk: RiskMetrics?
+    var isLoading: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -20,9 +21,7 @@ struct RiskPanelView: View {
                     color: risk.cumulativeReturn >= 0 ? Theme.accent : Theme.danger
                 )
             } else {
-                Text("No risk data available.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                LoadingOrEmptyView(isLoading: isLoading, message: "No risk data available.")
             }
         }
     }

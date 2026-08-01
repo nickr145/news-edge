@@ -49,19 +49,22 @@ struct TickerScreen: View {
                 )
                 .card()
 
-                RiskPanelView(risk: risk)
+                RiskPanelView(risk: risk, isLoading: isLoading)
                     .card()
 
-                PriceChartView(bars: bars, trend: trend)
+                PriceChartView(bars: bars, trend: trend, isLoading: isLoading)
                     .card()
 
-                SentimentPanelView(summary: summary, trend: trend)
+                SentimentPanelView(summary: summary, trend: trend, isLoading: isLoading)
                     .card()
 
                 NewsFeedView(articles: articles, loading: isLoading)
                     .card()
             }
             .padding()
+        }
+        .refreshable {
+            await refresh()
         }
         .navigationTitle(ticker)
         .navigationBarTitleDisplayMode(.inline)
@@ -140,23 +143,27 @@ struct TickerScreen: View {
         }
     }
 
+    /// Reconnects with a fixed backoff on drop/error; SwiftUI cancels this
+    /// task automatically when `loadKey` changes or the view disappears.
     private func listenForLiveNews() async {
-        let socket = NewsSocket()
-        do {
-            for try await article in socket.stream(ticker: ticker) {
-                articles = Array(dedupe([article] + articles).prefix(100))
-                let trendHours = min(windowDays * 24, 24 * 30)
-                async let newSummary = APIClient.shared.sentimentSummary(ticker: ticker, days: windowDays, minRelevance: minRelevance)
-                async let newTrend = APIClient.shared.sentimentTrend(ticker: ticker, hours: trendHours, minRelevance: minRelevance)
-                if let value = try? await newSummary { summary = value }
-                if let value = try? await newTrend { trend = value }
+        while !Task.isCancelled {
+            let socket = NewsSocket()
+            do {
+                for try await article in socket.stream(ticker: ticker) {
+                    articles = Array(dedupe([article] + articles).prefix(100))
+                    let trendHours = min(windowDays * 24, 24 * 30)
+                    async let newSummary = APIClient.shared.sentimentSummary(ticker: ticker, days: windowDays, minRelevance: minRelevance)
+                    async let newTrend = APIClient.shared.sentimentTrend(ticker: ticker, hours: trendHours, minRelevance: minRelevance)
+                    if let value = try? await newSummary { summary = value }
+                    if let value = try? await newTrend { trend = value }
+                }
+            } catch {
+                // Fall through to reconnect below.
             }
-        } catch {
-            // Stream ended or errored; SwiftUI cancels this task automatically
-            // when `loadKey` changes or the view disappears. Reconnect-on-drop
-            // is deferred to the "Polish" phase per the handoff brief.
+            socket.disconnect()
+            if Task.isCancelled { break }
+            try? await Task.sleep(for: .seconds(3))
         }
-        socket.disconnect()
     }
 
     private func dedupe(_ items: [Article]) -> [Article] {
