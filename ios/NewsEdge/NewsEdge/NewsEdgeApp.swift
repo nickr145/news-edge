@@ -9,9 +9,12 @@ import SwiftUI
 
 @main
 struct NewsEdgeApp: App {
+    @State private var watchlistStore = WatchlistStore()
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            RootView()
+                .environment(watchlistStore)
         }
     }
 }
