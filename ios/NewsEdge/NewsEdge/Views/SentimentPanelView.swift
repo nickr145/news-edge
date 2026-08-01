@@ -5,6 +5,7 @@ import Charts
 struct SentimentPanelView: View {
     let summary: SentimentSummary?
     let trend: SentimentTrend?
+    var isLoading: Bool = false
 
     private var labelDistribution: [(label: String, value: Int)] {
         (summary?.labelDistribution ?? [:])
@@ -15,7 +16,11 @@ struct SentimentPanelView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Sentiment").font(.headline)
-            statRow
+            if summary == nil && isLoading {
+                LoadingOrEmptyView(isLoading: true, message: "")
+            } else {
+                statRow
+            }
 
             if let points = trend?.points, !points.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
