@@ -52,27 +52,32 @@ struct WatchlistSentimentWidgetView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Watchlist Sentiment")
-                .font(.caption.bold())
-                .foregroundStyle(.secondary)
+            Text("WATCHLIST SENTIMENT")
+                .font(.system(size: 10, weight: .semibold))
+                .tracking(0.8)
+                .foregroundStyle(WidgetTheme.muted)
 
             if visibleItems.isEmpty {
                 Spacer()
                 Text("Add tickers to your watchlist in NewsEdge.")
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WidgetTheme.muted)
                 Spacer()
             } else {
                 ForEach(visibleItems) { item in
                     HStack {
-                        Text(item.ticker).font(.subheadline.bold())
+                        Text(item.ticker)
+                            .font(.system(size: 13, weight: .bold, design: .monospaced))
+                            .foregroundStyle(WidgetTheme.text)
                         Spacer()
                         if let ewma = item.ewmaCompound {
                             Text(ewma, format: .number.precision(.fractionLength(3)))
-                                .font(.caption.monospacedDigit())
-                                .foregroundStyle(ewma > 0.05 ? .green : (ewma < -0.05 ? .red : .primary))
+                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                .foregroundStyle(WidgetTheme.ewmaColor(ewma))
                         } else {
-                            Text("—").font(.caption).foregroundStyle(.secondary)
+                            Text("—")
+                                .font(.system(size: 12, design: .monospaced))
+                                .foregroundStyle(WidgetTheme.muted)
                         }
                     }
                 }
@@ -80,7 +85,7 @@ struct WatchlistSentimentWidgetView: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .containerBackground(.background, for: .widget)
+        .containerBackground(WidgetTheme.background, for: .widget)
     }
 }
 
