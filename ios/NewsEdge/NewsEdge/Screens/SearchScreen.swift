@@ -15,13 +15,11 @@ struct SearchScreen: View {
         List {
             if query.isEmpty {
                 Section {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Financial news intelligence — sentiment signals, risk metrics, and ML-powered recommendations.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.vertical, 4)
+                    heroLogotype
+                        .padding(.vertical, 12)
+                        .frame(maxWidth: .infinity)
                 }
+                .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
 
                 if watchlistStore.watchlist.isEmpty {
@@ -30,33 +28,45 @@ struct SearchScreen: View {
                         systemImage: "star",
                         description: Text("Search for a ticker above and add it to your watchlist.")
                     )
+                    .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
                 } else {
-                    Section("Watchlist") {
+                    Section {
                         ForEach(watchlistStore.watchlist, id: \.self) { symbol in
                             NavigationLink(value: symbol) {
                                 WatchlistRow(symbol: symbol)
                             }
+                            .listRowBackground(Color.clear)
                         }
                         .onDelete { indices in
                             for index in indices {
                                 watchlistStore.remove(watchlistStore.watchlist[index])
                             }
                         }
+                    } header: {
+                        Text("Watchlist")
+                            .font(.system(size: 10, weight: .bold))
+                            .tracking(1.5)
+                            .foregroundStyle(Theme.muted)
                     }
                 }
             } else if matches.isEmpty {
                 Text("No matches")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.muted)
+                    .listRowBackground(Color.clear)
             } else {
                 ForEach(matches) { ticker in
                     NavigationLink(value: ticker.symbol) {
                         TickerRow(ticker: ticker)
                     }
+                    .listRowBackground(Color.clear)
                 }
             }
         }
         .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(Theme.background)
+        .listRowSeparatorTint(Theme.border)
         .searchable(text: $query, prompt: "Search ticker or company — AAPL, Amazon, NVDA…")
         .onSubmit(of: .search) {
             let destination = matches.first?.symbol
@@ -65,6 +75,28 @@ struct SearchScreen: View {
             path.append(destination)
         }
         .navigationTitle("NewsEdge")
+    }
+
+    /// Matches .hero-logotype / .hero-mark / .hero-title / .hero-sub in styles.css.
+    private var heroLogotype: some View {
+        VStack(spacing: 14) {
+            RoundedRectangle(cornerRadius: 15, style: .continuous)
+                .fill(Theme.accent)
+                .frame(width: 56, height: 56)
+                .overlay(
+                    Text("NE")
+                        .font(.mono(20, weight: .semibold))
+                        .foregroundStyle(Theme.background)
+                )
+                .shadow(color: Theme.accent.opacity(0.28), radius: 16)
+
+            Text("Financial news intelligence — sentiment signals, risk metrics, and ML-powered recommendations.")
+                .font(.subheadline)
+                .foregroundStyle(Theme.muted)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 340)
+        }
+        .frame(maxWidth: .infinity)
     }
 }
 

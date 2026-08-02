@@ -12,14 +12,14 @@ struct NewsFeedView: View {
                 collapsed.toggle()
             } label: {
                 HStack {
-                    Text("Live News").font(.headline)
+                    Text("Live News").font(.headline).foregroundStyle(Theme.text)
                     Spacer()
                     Text("\(articles.count) articles")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(.mono(11))
+                        .foregroundStyle(Theme.muted)
                     Image(systemName: collapsed ? "chevron.right" : "chevron.down")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.muted)
                 }
                 .contentShape(Rectangle())
             }
@@ -29,7 +29,7 @@ struct NewsFeedView: View {
                 if articles.isEmpty && !loading {
                     Text("No articles yet. Subscribe to a ticker to begin.")
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.muted)
                 } else {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(articles.enumerated()), id: \.element.id) { index, article in
@@ -53,31 +53,45 @@ private struct ArticleRow: View {
             headline
             HStack(spacing: 8) {
                 Text(article.source ?? "unknown")
-                    .font(.caption2)
+                    .font(.mono(9.5))
+                    .foregroundStyle(Theme.muted)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(.secondary.opacity(0.15), in: Capsule())
+                    .background(Theme.surface2, in: Capsule())
+                    .overlay(Capsule().strokeBorder(Theme.border, lineWidth: 1))
                 if let label = article.sentimentLabel, !label.isEmpty {
-                    Text(label)
-                        .font(.caption2)
+                    Text(label.uppercased())
+                        .font(.system(size: 9, weight: .semibold))
+                        .tracking(0.6)
                         .foregroundStyle(Theme.sentimentColor(label))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(sentimentBadgeBackground(label), in: RoundedRectangle(cornerRadius: 4))
                 }
                 Text("rel \(String(format: "%.2f", article.relevanceScore ?? 0))")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .font(.mono(9.5))
+                    .foregroundStyle(Theme.muted)
                 Text(relativeTime(article.publishedAt))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .font(.mono(9.5))
+                    .foregroundStyle(Theme.muted)
             }
         }
         .padding(.vertical, 6)
+    }
+
+    private func sentimentBadgeBackground(_ label: String) -> Color {
+        switch label.lowercased() {
+        case "positive": return Theme.accentDim
+        case "negative": return Theme.dangerDim
+        default: return Color.white.opacity(0.05)
+        }
     }
 
     @ViewBuilder
     private var headline: some View {
         let text = Text(article.headline)
             .font(.subheadline.weight(.medium))
-            .foregroundStyle(.primary)
+            .foregroundStyle(Theme.text)
             .multilineTextAlignment(.leading)
         if let url = URL(string: article.url) {
             Link(destination: url) { text }
@@ -101,4 +115,5 @@ private struct ArticleRow: View {
     NewsFeedView(articles: [], loading: false)
         .card()
         .padding()
+        .background(Theme.background)
 }

@@ -47,21 +47,28 @@ struct ShapChartView: View {
             let maxAbs = max(currentEntries.map { abs($0.value) }.max() ?? 0, 1e-9)
             VStack(alignment: .leading, spacing: 6) {
                 Text(isFallback ? "Feature Values" : "SHAP Explanations")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 10, weight: .semibold))
+                    .tracking(1)
+                    .textCase(.uppercase)
+                    .foregroundStyle(Theme.muted)
                 ForEach(currentEntries) { entry in
                     HStack(spacing: 8) {
                         Text(entry.label)
-                            .font(.caption2)
+                            .font(.system(size: 10))
+                            .foregroundStyle(Theme.muted)
                             .frame(width: 96, alignment: .leading)
                         GeometryReader { geo in
                             RoundedRectangle(cornerRadius: 3)
-                                .fill(entry.value >= 0 ? Theme.accent : Theme.danger)
-                                .frame(width: geo.size.width * min(abs(entry.value) / maxAbs, 1))
+                                .fill(Theme.surface2)
+                                .overlay(alignment: .leading) {
+                                    RoundedRectangle(cornerRadius: 3)
+                                        .fill(entry.value >= 0 ? Theme.accent : Theme.danger)
+                                        .frame(width: geo.size.width * min(abs(entry.value) / maxAbs, 1))
+                                }
                         }
-                        .frame(height: 8)
+                        .frame(height: 5)
                         Text(entry.value, format: .number.sign(strategy: .always()).precision(.fractionLength(3)))
-                            .font(.caption2.monospacedDigit())
+                            .font(.mono(9))
                             .foregroundStyle(entry.value >= 0 ? Theme.accent : Theme.danger)
                             .frame(width: 52, alignment: .trailing)
                     }
