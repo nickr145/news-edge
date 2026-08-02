@@ -10,6 +10,8 @@ struct RootView: View {
                     TickerScreen(ticker: symbol)
                 }
         }
+        .tint(Theme.accent)
+        .preferredColorScheme(.dark) // the web app has no light theme; match it exactly
     }
 }
 

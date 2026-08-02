@@ -7,16 +7,19 @@ struct WatchlistRow: View {
 
     var body: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(symbol).font(.headline)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(symbol)
+                    .font(.mono(14, weight: .bold))
+                    .tracking(0.6)
+                    .foregroundStyle(Theme.text)
                 Text(summary.map { "\($0.count) articles" } ?? "—")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.muted)
             }
             Spacer()
             if let ewma = summary?.ewmaCompound {
                 Text(ewma, format: .number.precision(.fractionLength(3)))
-                    .font(.callout.monospacedDigit())
+                    .font(.mono(13, weight: .medium))
                     .foregroundStyle(ewmaColor(ewma))
             }
         }
@@ -28,7 +31,7 @@ struct WatchlistRow: View {
     private func ewmaColor(_ value: Double) -> Color {
         if value > 0.05 { return Theme.accent }
         if value < -0.05 { return Theme.danger }
-        return .primary
+        return Theme.text
     }
 }
 
@@ -36,4 +39,6 @@ struct WatchlistRow: View {
     List {
         WatchlistRow(symbol: "AAPL")
     }
+    .scrollContentBackground(.hidden)
+    .background(Theme.background)
 }

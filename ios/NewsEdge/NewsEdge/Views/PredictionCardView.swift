@@ -9,25 +9,30 @@ struct PredictionCardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Recommendation").font(.headline)
+            Text("Recommendation").font(.headline).foregroundStyle(Theme.text)
 
             if let prediction {
                 Text(prediction.recommendation)
-                    .font(.title2.bold())
+                    .font(.mono(30, weight: .semibold))
+                    .tracking(1)
                     .foregroundStyle(Theme.signalColor(prediction.recommendation))
+                    .shadow(color: Theme.signalColor(prediction.recommendation).opacity(0.4), radius: 14)
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
-                        Text("Confidence").font(.caption).foregroundStyle(.secondary)
+                        Text("Confidence")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.muted)
                         Spacer()
                         Text(prediction.confidence, format: .percent.precision(.fractionLength(1)))
-                            .font(.caption.monospacedDigit())
+                            .font(.mono(13))
+                            .foregroundStyle(Theme.text)
                     }
                     ProgressView(value: prediction.confidence)
                         .tint(Theme.signalColor(prediction.recommendation))
                 }
 
-                HStack {
+                HStack(spacing: 8) {
                     metric("Sentiment", String(format: "%.3f", prediction.sentimentScore))
                     metric("RSI", String(format: "%.1f", prediction.priceRsi))
                     metric("Horizon", "\(prediction.horizonDays)d")
@@ -37,7 +42,7 @@ struct PredictionCardView: View {
             } else {
                 Text("Run a prediction to see a BUY / HOLD / SELL signal.")
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.muted)
             }
 
             Picker("Horizon", selection: $horizonDays) {
@@ -46,27 +51,40 @@ struct PredictionCardView: View {
                 Text("14 days").tag(14)
             }
             .pickerStyle(.segmented)
+            .tint(Theme.accent)
 
             Button(action: onPredict) {
                 Group {
                     if predicting {
                         ProgressView()
+                            .tint(Theme.background)
                     } else {
                         Text("Run Prediction")
                     }
                 }
                 .frame(maxWidth: .infinity)
+                .padding(.vertical, 2)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.plain)
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(Theme.background)
+            .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.radiusSmall))
+            .opacity(predicting ? 0.4 : 1)
             .disabled(predicting)
         }
     }
 
     private func metric(_ label: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.caption2).foregroundStyle(.secondary)
-            Text(value).font(.callout.monospacedDigit())
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(Theme.muted)
+            Text(value)
+                .font(.mono(15, weight: .medium))
+                .foregroundStyle(Theme.text)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .metricCell()
     }
 }
 
@@ -74,4 +92,5 @@ struct PredictionCardView: View {
     PredictionCardView(prediction: nil, predicting: false, horizonDays: .constant(5), onPredict: {})
         .card()
         .padding()
+        .background(Theme.background)
 }

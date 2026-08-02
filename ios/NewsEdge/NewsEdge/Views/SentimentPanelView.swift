@@ -15,7 +15,7 @@ struct SentimentPanelView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Sentiment").font(.headline)
+            Text("Sentiment").font(.headline).foregroundStyle(Theme.text)
             if summary == nil && isLoading {
                 LoadingOrEmptyView(isLoading: true, message: "")
             } else {
@@ -24,7 +24,7 @@ struct SentimentPanelView: View {
 
             if let points = trend?.points, !points.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Sentiment Trend").font(.caption).foregroundStyle(.secondary)
+                    sectionLabel("Sentiment Trend")
                     Chart {
                         ForEach(points) { point in
                             LineMark(
@@ -35,17 +35,29 @@ struct SentimentPanelView: View {
                             .interpolationMethod(.monotone)
                         }
                         RuleMark(y: .value("Zero", 0))
-                            .foregroundStyle(.secondary.opacity(0.3))
+                            .foregroundStyle(Theme.borderMid)
                             .lineStyle(StrokeStyle(dash: [3, 3]))
                     }
                     .chartYScale(domain: -1...1)
+                    .chartXAxis {
+                        AxisMarks { _ in
+                            AxisGridLine().foregroundStyle(Theme.border)
+                            AxisValueLabel().foregroundStyle(Theme.muted)
+                        }
+                    }
+                    .chartYAxis {
+                        AxisMarks { _ in
+                            AxisGridLine().foregroundStyle(Theme.border)
+                            AxisValueLabel().foregroundStyle(Theme.muted)
+                        }
+                    }
                     .frame(height: 140)
                 }
             }
 
             if !labelDistribution.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Label Distribution").font(.caption).foregroundStyle(.secondary)
+                    sectionLabel("Label Distribution")
                     Chart(labelDistribution, id: \.label) { entry in
                         BarMark(
                             x: .value("Label", entry.label),
@@ -54,10 +66,29 @@ struct SentimentPanelView: View {
                         .foregroundStyle(Theme.warn)
                         .cornerRadius(4)
                     }
+                    .chartXAxis {
+                        AxisMarks { _ in
+                            AxisValueLabel().foregroundStyle(Theme.muted)
+                        }
+                    }
+                    .chartYAxis {
+                        AxisMarks { _ in
+                            AxisGridLine().foregroundStyle(Theme.border)
+                            AxisValueLabel().foregroundStyle(Theme.muted)
+                        }
+                    }
                     .frame(height: 140)
                 }
             }
         }
+    }
+
+    private func sectionLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 10, weight: .semibold))
+            .tracking(1)
+            .textCase(.uppercase)
+            .foregroundStyle(Theme.muted)
     }
 
     private var statRow: some View {
@@ -66,18 +97,25 @@ struct SentimentPanelView: View {
             statCell("Mean", summary?.meanCompound)
             statCell("Std Dev", summary?.stdCompound)
             Spacer()
-            VStack(alignment: .trailing, spacing: 2) {
-                Text("Articles").font(.caption2).foregroundStyle(.secondary)
-                Text("\(summary?.count ?? 0)").font(.callout.monospacedDigit())
+            VStack(alignment: .trailing, spacing: 3) {
+                Text("Articles")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(Theme.muted)
+                Text("\(summary?.count ?? 0)")
+                    .font(.mono(15, weight: .medium))
+                    .foregroundStyle(Theme.text)
             }
         }
     }
 
     private func statCell(_ label: String, _ value: Double?) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.caption2).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(Theme.muted)
             Text(value.map { String(format: "%.3f", $0) } ?? "0.000")
-                .font(.callout.monospacedDigit())
+                .font(.mono(15, weight: .medium))
+                .foregroundStyle(Theme.text)
         }
     }
 }
@@ -86,4 +124,5 @@ struct SentimentPanelView: View {
     SentimentPanelView(summary: nil, trend: nil)
         .card()
         .padding()
+        .background(Theme.background)
 }

@@ -30,13 +30,15 @@ struct TickerScreen: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                header
+
                 if let errorMessage {
                     Text(errorMessage)
                         .font(.footnote)
                         .foregroundStyle(Theme.danger)
                         .padding(8)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Theme.danger.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                        .background(Theme.dangerDim, in: RoundedRectangle(cornerRadius: Theme.radiusSmall))
                 }
 
                 controlsRow
@@ -63,27 +65,54 @@ struct TickerScreen: View {
             }
             .padding()
         }
+        .background(Theme.background)
         .refreshable {
             await refresh()
         }
         .navigationTitle(ticker)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    watchlistStore.toggle(ticker)
-                } label: {
-                    Image(systemName: watchlistStore.isWatched(ticker) ? "star.fill" : "star")
-                }
-                .accessibilityLabel(watchlistStore.isWatched(ticker) ? "Remove from watchlist" : "Add to watchlist")
-            }
-        }
         .task(id: loadKey) {
             await subscribeAndPoll()
         }
         .task(id: loadKey) {
             await listenForLiveNews()
         }
+    }
+
+    /// Matches .ticker-header / .ticker-symbol / .ticker-tagline / .btn-watchlist.
+    private var header: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(ticker)
+                    .font(.mono(32, weight: .semibold))
+                    .tracking(0.8)
+                    .foregroundStyle(Theme.text)
+                Text("Sentiment intelligence · Live feed")
+                    .font(.mono(11, weight: .medium))
+                    .foregroundStyle(Theme.muted)
+            }
+            Spacer()
+            watchButton
+        }
+    }
+
+    private var watchButton: some View {
+        let watched = watchlistStore.isWatched(ticker)
+        return Button {
+            watchlistStore.toggle(ticker)
+        } label: {
+            Text(watched ? "★ Watching" : "☆ Watch")
+                .font(.system(size: 12, weight: .semibold))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .foregroundStyle(watched ? Theme.accent : Theme.muted)
+        .background(watched ? Theme.accentDim : Color.clear, in: RoundedRectangle(cornerRadius: Theme.radiusXSmall))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.radiusXSmall)
+                .strokeBorder(watched ? Theme.accent : Theme.border, lineWidth: 1)
+        )
+        .accessibilityLabel(watched ? "Remove from watchlist" : "Add to watchlist")
     }
 
     private var controlsRow: some View {
@@ -102,6 +131,7 @@ struct TickerScreen: View {
             }
             .pickerStyle(.segmented)
         }
+        .tint(Theme.accent)
     }
 
     // MARK: - Data loading

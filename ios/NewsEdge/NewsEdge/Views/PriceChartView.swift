@@ -28,7 +28,7 @@ struct PriceChartView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Price & Sentiment").font(.headline)
+            Text("Price & Sentiment").font(.headline).foregroundStyle(Theme.text)
 
             if chartBars.isEmpty {
                 LoadingOrEmptyView(isLoading: isLoading, message: "No price data available.")
@@ -42,6 +42,12 @@ struct PriceChartView: View {
                     .interpolationMethod(.monotone)
                 }
                 .chartXAxis(.hidden)
+                .chartYAxis {
+                    AxisMarks { _ in
+                        AxisGridLine().foregroundStyle(Theme.border)
+                        AxisValueLabel().foregroundStyle(Theme.muted)
+                    }
+                }
                 .frame(height: 140)
 
                 Chart {
@@ -56,14 +62,15 @@ struct PriceChartView: View {
                         }
                     }
                     RuleMark(y: .value("Zero", 0))
-                        .foregroundStyle(.secondary.opacity(0.3))
+                        .foregroundStyle(Theme.borderMid)
                         .lineStyle(StrokeStyle(dash: [3, 3]))
                 }
                 .chartYScale(domain: -1...1)
                 .chartXAxis {
                     AxisMarks(values: .automatic(desiredCount: 4)) { _ in
-                        AxisGridLine()
+                        AxisGridLine().foregroundStyle(Theme.border)
                         AxisValueLabel(format: .dateTime.month(.abbreviated).day())
+                            .foregroundStyle(Theme.muted)
                     }
                 }
                 .frame(height: 90)
@@ -76,4 +83,5 @@ struct PriceChartView: View {
     PriceChartView(bars: [], trend: nil)
         .card()
         .padding()
+        .background(Theme.background)
 }
