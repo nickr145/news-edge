@@ -45,7 +45,7 @@ struct WatchlistSentimentWidgetView: View {
 
     private var visibleItems: [WidgetTickerSentiment] {
         switch family {
-        case .systemSmall: Array(entry.items.prefix(1))
+        case .systemSmall: Array(entry.items.prefix(3))
         default: Array(entry.items.prefix(4))
         }
     }
