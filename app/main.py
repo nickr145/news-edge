@@ -11,7 +11,7 @@ from app.api.routes_prediction import router as prediction_router
 from app.api.routes_ws import router as ws_router
 from app.core.config import get_settings
 from app.db.init_db import init_db
-from app.services.runtime import news_ingestion
+from app.services.runtime import news_ingestion, news_poller
 from app.streams.news_stream import ensure_consumer_group
 
 settings = get_settings()
@@ -22,7 +22,9 @@ async def lifespan(app: FastAPI):
     init_db()
     ensure_consumer_group()
     await news_ingestion.start()
+    news_poller.start()
     yield
+    await news_poller.stop()
     await news_ingestion.stop()
 
 

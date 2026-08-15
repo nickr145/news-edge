@@ -29,6 +29,9 @@ class Settings(BaseSettings):
 
     finnhub_api_key: str = ""
     marketaux_api_key: str = ""
+    news_poll_interval_hours: int = 3
+    news_poll_days: int = 2
+    news_poll_limit: int = 50
     enable_body_scraping: bool = True
     body_scrape_timeout: int = 6
     # Comma-separated SEC form types to ingest (e.g. "8-K,10-K,10-Q")
