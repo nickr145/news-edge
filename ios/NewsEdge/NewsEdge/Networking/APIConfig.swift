@@ -1,17 +1,13 @@
 import Foundation
 
 enum APIConfig {
-    /// Simulator/device debug builds talk to a locally running `uvicorn` (see handoff brief).
-    /// Loopback addresses are exempt from App Transport Security, so no Info.plist
-    /// exception is needed for this to work in the simulator.
+    // FastAPI backend deployed on Railway (RAILWAY_PUBLIC_DOMAIN); the Vercel
+    // deployment at news-edge-ai.vercel.app only serves the React frontend build.
+    // DEBUG and RELEASE both point here so the simulator always shows real data;
+    // DEBUG builds hitting an isolated local `uvicorn` would need their own backfill
+    // to have anything to show, which isn't worth the tradeoff.
     static var baseURL: URL {
-        #if DEBUG
-        return URL(string: "http://localhost:8000")!
-        #else
-        // FastAPI backend deployed on Railway (RAILWAY_PUBLIC_DOMAIN); the Vercel
-        // deployment at news-edge-ai.vercel.app only serves the React frontend build.
-        return URL(string: "https://news-edge-production.up.railway.app")!
-        #endif
+        URL(string: "https://news-edge-production.up.railway.app")!
     }
 
     static var webSocketBaseURL: URL {
