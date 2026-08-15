@@ -25,11 +25,7 @@ private struct SentimentSummaryPayload: Decodable {
 
 enum WidgetAPI {
     static var baseURL: URL {
-        #if DEBUG
-        return URL(string: "http://localhost:8000")!
-        #else
-        return URL(string: "https://news-edge-production.up.railway.app")!
-        #endif
+        URL(string: "https://news-edge-production.up.railway.app")!
     }
 
     static func fetchSentiment(ticker: String, days: Int = 7) async -> WidgetTickerSentiment {
