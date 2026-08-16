@@ -45,6 +45,7 @@ struct SearchScreen: View {
                                 } label: {
                                     Label("Remove", systemImage: "xmark")
                                 }
+                                .tint(Theme.danger)
                             }
                         }
                     } header: {
