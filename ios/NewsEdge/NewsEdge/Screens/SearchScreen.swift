@@ -33,13 +33,14 @@ struct SearchScreen: View {
                 } else {
                     Section {
                         ForEach(watchlistStore.watchlist, id: \.self) { symbol in
-                            NavigationLink(value: symbol) {
-                                WatchlistRow(symbol: symbol)
-                            }
-                            .listRowBackground(Color.clear)
-                            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-                            .listRowSeparator(.hidden)
-                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            WatchlistRow(symbol: symbol)
+                                .contentShape(Rectangle())
+                                .onTapGesture { path.append(symbol) }
+                                .accessibilityAddTraits(.isButton)
+                                .listRowBackground(Color.clear)
+                                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                                .listRowSeparator(.hidden)
+                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                 Button(role: .destructive) {
                                     watchlistStore.remove(symbol)
                                 } label: {
