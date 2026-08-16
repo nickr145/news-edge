@@ -39,10 +39,12 @@ struct SearchScreen: View {
                             .listRowBackground(Color.clear)
                             .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                             .listRowSeparator(.hidden)
-                        }
-                        .onDelete { indices in
-                            for index in indices {
-                                watchlistStore.remove(watchlistStore.watchlist[index])
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button(role: .destructive) {
+                                    watchlistStore.remove(symbol)
+                                } label: {
+                                    Label("Remove", systemImage: "xmark")
+                                }
                             }
                         }
                     } header: {
