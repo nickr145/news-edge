@@ -32,7 +32,6 @@ function WatchlistCard({ ticker, onRemove }) {
         <span className="watchlist-ticker">{ticker}</span>
         <div className="watchlist-card-actions">
           <button className="watchlist-remove" onClick={handleRemove} title="Remove from watchlist">×</button>
-          <span className="watchlist-chevron" aria-hidden="true">›</span>
         </div>
       </div>
       <div className="watchlist-stats">
