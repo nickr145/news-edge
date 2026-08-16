@@ -1,6 +1,8 @@
 import { ComposedChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts'
+import { useIsMobile } from '../hooks/useIsMobile'
 
 export default function PriceChart({ bars, trend }) {
+  const isMobile = useIsMobile()
   const sentMap = {}
   for (const pt of (trend?.points || [])) {
     const day = pt.bucket.slice(0, 10)
@@ -36,21 +38,21 @@ export default function PriceChart({ bars, trend }) {
   return (
     <div className="card">
       <div className="panel-label">Price & Sentiment</div>
-      <ResponsiveContainer width="100%" height={240}>
-        <ComposedChart data={data} margin={{ bottom: 20, right: 48, left: 4 }}>
+      <ResponsiveContainer width="100%" aspect={isMobile ? 1.3 : 2.2}>
+        <ComposedChart data={data} margin={{ bottom: 20, right: isMobile ? 8 : 48, left: 4 }}>
           <XAxis
             dataKey="day"
             tick={{ fontSize: 10, fill: '#64748b' }}
             interval="preserveStartEnd"
-            angle={-30}
-            textAnchor="end"
-            height={40}
+            angle={isMobile ? 0 : -30}
+            textAnchor={isMobile ? 'middle' : 'end'}
+            height={isMobile ? 24 : 40}
           />
           <YAxis
             yAxisId="price"
             orientation="right"
             tick={{ fontSize: 10, fill: '#94a3b8' }}
-            width={52}
+            width={isMobile ? 38 : 52}
             tickFormatter={(v) => `$${v}`}
           />
           <YAxis
@@ -58,7 +60,7 @@ export default function PriceChart({ bars, trend }) {
             orientation="left"
             domain={[-1, 1]}
             tick={{ fontSize: 10, fill: '#10d9a0' }}
-            width={32}
+            width={isMobile ? 24 : 32}
           />
           <Tooltip {...tooltipStyle} />
           <Legend wrapperStyle={{ fontSize: 11, color: '#64748b', paddingTop: 4 }} />

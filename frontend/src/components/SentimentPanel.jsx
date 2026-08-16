@@ -1,6 +1,8 @@
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
+import { useIsMobile } from '../hooks/useIsMobile'
 
 export default function SentimentPanel({ summary, trend }) {
+  const isMobile = useIsMobile()
   const barData = Object.entries(summary?.label_distribution || {}).map(([label, value]) => ({ label, value }))
   const trendData = (trend?.points || []).map((p) => ({
     time: new Date(p.bucket).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
@@ -37,17 +39,17 @@ export default function SentimentPanel({ summary, trend }) {
       <div className="charts-grid">
         <div>
           <p className="chart-label">Sentiment Trend</p>
-          <ResponsiveContainer width="100%" height={200}>
+          <ResponsiveContainer width="100%" aspect={isMobile ? 1.4 : 2.4}>
             <LineChart data={trendData} margin={{ bottom: 20, right: 4 }}>
               <XAxis
                 dataKey="time"
                 tick={{ fontSize: 10, fill: '#64748b' }}
                 interval="preserveStartEnd"
-                angle={-30}
-                textAnchor="end"
-                height={40}
+                angle={isMobile ? 0 : -30}
+                textAnchor={isMobile ? 'middle' : 'end'}
+                height={isMobile ? 24 : 40}
               />
-              <YAxis domain={[-1, 1]} tick={{ fontSize: 10, fill: '#64748b' }} width={32} />
+              <YAxis domain={[-1, 1]} tick={{ fontSize: 10, fill: '#64748b' }} width={isMobile ? 26 : 32} />
               <Tooltip {...tooltipStyle} />
               <ReferenceLine y={0} stroke="rgba(255,255,255,0.12)" strokeDasharray="3 3" />
               <Line type="monotone" dataKey="score" stroke="#10d9a0" dot={false} strokeWidth={2} />
@@ -56,10 +58,10 @@ export default function SentimentPanel({ summary, trend }) {
         </div>
         <div>
           <p className="chart-label">Label Distribution</p>
-          <ResponsiveContainer width="100%" height={200}>
+          <ResponsiveContainer width="100%" aspect={isMobile ? 1.4 : 2.4}>
             <BarChart data={barData} margin={{ bottom: 4, right: 4 }}>
-              <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#64748b' }} />
-              <YAxis tick={{ fontSize: 10, fill: '#64748b' }} width={32} />
+              <XAxis dataKey="label" tick={{ fontSize: isMobile ? 9 : 11, fill: '#64748b' }} />
+              <YAxis tick={{ fontSize: 10, fill: '#64748b' }} width={isMobile ? 26 : 32} />
               <Tooltip {...{ ...tooltipStyle, itemStyle: { color: '#fbbf24' } }} />
               <Bar dataKey="value" fill="#fbbf24" radius={[4, 4, 0, 0]} />
             </BarChart>
