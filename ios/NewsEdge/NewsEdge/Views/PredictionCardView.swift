@@ -40,7 +40,7 @@ struct PredictionCardView: View {
 
                 ShapChartView(importances: prediction.featureImportances)
             } else {
-                Text("Run a prediction to see a BUY / HOLD / SELL signal.")
+                Text("Run a prediction to see a RISE / STABLE / FALL signal.")
                     .font(.footnote)
                     .foregroundStyle(Theme.muted)
             }

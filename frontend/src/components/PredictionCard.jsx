@@ -82,7 +82,7 @@ export default function PredictionCard({ prediction, onPredict, predicting, hori
           <ShapChart importances={prediction.feature_importances} />
         </>
       ) : (
-        <p className="muted-text" style={{ marginBottom: '0.75rem' }}>Run a prediction to see a BUY / HOLD / SELL signal.</p>
+        <p className="muted-text" style={{ marginBottom: '0.75rem' }}>Run a prediction to see a RISE / STABLE / FALL signal.</p>
       )}
       <div className="horizon-row">
         <span className="ctrl-label">Horizon</span>
