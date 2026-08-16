@@ -701,6 +701,7 @@ body {
   text-transform: uppercase;
   color: var(--muted);
   margin-bottom: 0.75rem;
+  text-align: left;
 }
 
 .watchlist-grid {
