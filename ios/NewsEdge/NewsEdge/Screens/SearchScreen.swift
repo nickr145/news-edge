@@ -37,6 +37,8 @@ struct SearchScreen: View {
                                 WatchlistRow(symbol: symbol)
                             }
                             .listRowBackground(Color.clear)
+                            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                            .listRowSeparator(.hidden)
                         }
                         .onDelete { indices in
                             for index in indices {
