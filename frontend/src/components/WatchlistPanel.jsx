@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 
 function WatchlistCard({ ticker, onRemove }) {
   const [summary, setSummary] = useState(null)
+  const navigate = useNavigate()
 
   useEffect(() => {
     api.get(`/api/news/${ticker}/sentiment`, { params: { days: 7 } })
@@ -14,11 +15,25 @@ function WatchlistCard({ ticker, onRemove }) {
   const ewma = summary?.ewma_compound
   const sentClass = ewma == null ? '' : ewma > 0.05 ? 'positive' : ewma < -0.05 ? 'danger' : ''
 
+  const handleRemove = (e) => {
+    e.stopPropagation()
+    onRemove(ticker)
+  }
+
   return (
-    <div className="watchlist-card">
+    <div
+      className="watchlist-card"
+      role="link"
+      tabIndex={0}
+      onClick={() => navigate(`/ticker/${ticker}`)}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') navigate(`/ticker/${ticker}`) }}
+    >
       <div className="watchlist-card-top">
-        <Link to={`/ticker/${ticker}`} className="watchlist-ticker">{ticker}</Link>
-        <button className="watchlist-remove" onClick={() => onRemove(ticker)} title="Remove from watchlist">×</button>
+        <span className="watchlist-ticker">{ticker}</span>
+        <div className="watchlist-card-actions">
+          <button className="watchlist-remove" onClick={handleRemove} title="Remove from watchlist">×</button>
+          <span className="watchlist-chevron" aria-hidden="true">›</span>
+        </div>
       </div>
       <div className="watchlist-stats">
         <div className="metric-cell">
