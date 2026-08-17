@@ -1,6 +1,6 @@
 # NewsEdge
 
-Real-time stock news sentiment platform with historical backfill, live streaming ingestion, ticker relevance filtering, ML-powered predictions, risk analytics, and an interactive React dashboard.
+Real-time stock news sentiment platform with historical backfill, live streaming ingestion, ticker relevance filtering, ML-powered predictions, risk analytics, and both a React web dashboard and a native iOS app sharing one backend.
 
 **Live:** https://news-edge-ai.vercel.app
 
@@ -26,7 +26,7 @@ Real-time stock news sentiment platform with historical backfill, live streaming
 - XGBoost model trained on sentiment features + technical indicators (RSI, momentum, Bollinger Band position, volume ratio).
 - SHAP explanations returned with every prediction, showing feature contributions to the signal.
 - Configurable prediction horizon: 1, 5, or 14 days.
-- Prediction falls back to conservative rule-based `HOLD` when model artifact is unavailable or data is insufficient.
+- Prediction falls back to a sentiment-threshold rule (`RISE` above +0.15 EWMA, `FALL` below -0.15, else `STABLE`) when no trained model artifact is available or there's insufficient data to train one.
 - 5-day forward return labels (`RISE` / `STABLE` / `FALL` at ±2% threshold) persisted to `price_labels` table via Alpaca bars.
 - Celery Beat schedule:
   - Daily at 01:00 UTC: refresh price labels for all tracked tickers.
@@ -49,6 +49,12 @@ Real-time stock news sentiment platform with historical backfill, live streaming
 - Risk panel with all risk metrics.
 - Relevance-filtered live news feed via WebSocket.
 - History window selector (`1 / 7 / 30 / 90 days`) and min relevance selector (`0.20 / 0.35 / 0.50 / 0.70`).
+
+### iOS App
+- Native SwiftUI app (`ios/NewsEdge`) — same backend and endpoints as the web dashboard, dark theme ported 1:1 from the web design tokens.
+- Watchlist as card tiles (ticker, EWMA and article count as labeled sub-cells) with swipe-to-remove; tapping a card opens that ticker's detail screen.
+- Ticker detail screen: sentiment stats, dual price/sentiment mini-charts, risk metrics, prediction card with SHAP feature bars, and a relevance-filtered live news feed over the same WebSocket the web app uses.
+- Home-screen widget (`NewsEdgeWidget`) showing 7-day EWMA sentiment for watchlisted tickers, refreshing independently of the app.
 
 ## Main Endpoints
 
@@ -100,7 +106,7 @@ docker compose exec api alembic upgrade head
 3. Historical news is fetched, scored with FinBERT, and persisted.
 4. Live WebSocket continues incremental updates.
 5. Dashboard updates sentiment trend, price & sentiment overlay, relevance-filtered feed, risk metrics.
-6. Run a prediction with the desired horizon to get a `BUY` / `HOLD` / `SELL` signal with SHAP explanations.
+6. Run a prediction with the desired horizon to get a `RISE` / `STABLE` / `FALL` price-direction signal (not a trading recommendation) with SHAP explanations.
 
 ## Training
 
