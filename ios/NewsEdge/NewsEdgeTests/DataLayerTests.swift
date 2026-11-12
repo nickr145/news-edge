@@ -142,6 +142,14 @@ struct DataLayerTests {
         #expect(bars[0].volume == 10 && bars[1].volume == 30)
     }
 
+    @Test func malformedChartWithShortArraysSkipsCandlesInsteadOfCrashing() async throws {
+        // 3 timestamps but only 2 closes/opens/highs/lows and 1 volume: the third candle is skipped, not an index crash.
+        StubProtocol.route(yahooChart, body: #"{"chart":{"result":[{"timestamp":[1,2,3],"indicators":{"quote":[{"open":[1,2],"high":[1,2],"low":[1,2],"close":[1,2],"volume":[5]}]}}]}}"#)
+        let bars = try await yahoo().bars(ticker: "AAPL")
+        #expect(bars.map(\.close) == [1, 2])
+        #expect(bars.map(\.volume) == [5, 0])
+    }
+
     @Test func barsFallBackToNasdaqThenDiskThenThrow() async throws {
         let dir = tempDir()
         StubProtocol.route(yahooChart, status: 500, body: "")
@@ -235,7 +243,8 @@ struct DataLayerTests {
     @Test func apiClientFiltersDedupsAndAggregates() async throws {
         // Yesterday 12:00 UTC, so a/b/d share a UTC day regardless of when the test runs.
         var utc = Calendar(identifier: .gregorian); utc.timeZone = TimeZone(identifier: "UTC")!
-        let base = utc.startOfDay(for: Date()).addingTimeInterval(-12 * 3600)
+        let now = Date()
+        let base = utc.startOfDay(for: now).addingTimeInterval(-12 * 3600)
         StubProtocol.route(yahooSearch, body: searchJSON([
             NewsItem(title: "AAPL good earnings", time: base),
             NewsItem(title: "Apple bad news - Reuters", publisher: "Reuters", time: base.addingTimeInterval(-3600)),
@@ -248,7 +257,7 @@ struct DataLayerTests {
         let log = ScoreLog()
         let store = NewsStore(directory: tempDir(), yahoo: yahoo(), google: GoogleNewsClient(session: StubProtocol.session),
                               score: log.score, companyName: { _ in nil })
-        let api = APIClient(yahoo: yahoo(), store: store)
+        let api = APIClient(yahoo: yahoo(), store: store, now: { now })
 
         let week = try await api.articles(ticker: "AAPL", days: 7)
         #expect(week.map(\.headline) == ["AAPL good earnings", "Apple bad news - Reuters"]) // dup + low relevance dropped
@@ -257,17 +266,59 @@ struct DataLayerTests {
         #expect(try await api.articles(ticker: "AAPL", days: 7, minRelevance: 0.2).count == 3) // roundup passes at 0.2
         #expect(try await api.articles(ticker: "AAPL", days: 7, limit: 1).count == 1)
 
-        // Weighted: good 0.8x1.0, bad -0.6x1.25 = -0.75. EWMA runs oldest to newest: -0.75 then 0.8.
+        // Weighted: good 0.8x1.0, bad -0.6x1.25 = -0.75. The EWMA is recency-weighted with half-life 7/3 days;
+        // the bad one is 1h older, so its weight is r = 0.5^((1/24)/(7/3)) of the good one's (independent of `now`).
         let summary = try await api.sentimentSummary(ticker: "AAPL", days: 7)
         #expect(summary.count == 2)
         #expect(summary.labelDistribution == ["POSITIVE": 1, "NEUTRAL": 0, "NEGATIVE": 1])
         #expect(abs(summary.meanCompound - 0.025) < 1e-9)
-        #expect(abs(summary.ewmaCompound - (-0.285)) < 1e-9)
+        let r = pow(0.5, (1.0 / 24.0) / (7.0 / 3.0))
+        #expect(abs(summary.ewmaCompound - (0.8 - 0.75 * r) / (1 + r)) < 1e-9)
 
         let trend = try await api.sentimentTrend(ticker: "AAPL", hours: 24 * 30)
         #expect(trend.points.map(\.articleCount) == [1, 2])   // the old day, then yesterday
         #expect(trend.points.last?.bucket == utc.startOfDay(for: base))
         #expect(abs((trend.points.last?.meanCompound ?? 0) - 0.025) < 1e-9)
+    }
+
+    // MARK: the window and the horizon actually matter
+
+    /// One fresh negative headline (1h old) and three older positives (4 days old).
+    private func moodClient(now: Date) -> APIClient {
+        StubProtocol.route(yahooSearch, body: searchJSON([
+            NewsItem(title: "AAPL bad flash", time: now.addingTimeInterval(-3600)),
+            NewsItem(title: "AAPL good A", time: now.addingTimeInterval(-4 * 86_400)),
+            NewsItem(title: "AAPL good B", time: now.addingTimeInterval(-4 * 86_400)),
+            NewsItem(title: "AAPL good C", time: now.addingTimeInterval(-4 * 86_400)),
+        ]))
+        StubProtocol.fail(googleRSS)
+        let closes = (0..<40).map { String(100 + $0) }.joined(separator: ",")
+        let stamps = (0..<40).map { String(1_767_225_600 + $0 * 86_400) }.joined(separator: ",")
+        StubProtocol.route(yahooChart, body: #"{"chart":{"result":[{"timestamp":[\#(stamps)],"indicators":{"quote":[{"open":[\#(closes)],"high":[\#(closes)],"low":[\#(closes)],"close":[\#(closes)],"volume":[\#((0..<40).map { _ in "1" }.joined(separator: ","))]}]}}]}}"#)
+        let store = NewsStore(directory: tempDir(), yahoo: yahoo(), google: GoogleNewsClient(session: StubProtocol.session),
+                              score: ScoreLog().score, companyName: { _ in nil })
+        return APIClient(yahoo: yahoo(), store: store, now: { now })
+    }
+
+    @Test func horizonsGiveDifferentRecommendations() async throws {
+        let api = moodClient(now: Date())
+        let d1 = try await api.predictSync(ticker: "AAPL", horizonDays: 1)
+        let d5 = try await api.predictSync(ticker: "AAPL", horizonDays: 5)
+        let d14 = try await api.predictSync(ticker: "AAPL", horizonDays: 14)
+        #expect([d1.recommendation, d5.recommendation, d14.recommendation] == ["FALL", "STABLE", "RISE"])
+        #expect(abs(d1.sentimentScore - (-0.6)) < 1e-9)                // only the fresh negative is inside 1 day
+        #expect(d1.sentimentScore < d5.sentimentScore && d5.sentimentScore < d14.sentimentScore)
+        #expect(abs(d1.confidence - (0.52 + 0.6 * 0.35)) < 1e-9)
+        #expect(d14.horizonDays == 14)
+    }
+
+    @Test func ewmaChangesWithTheWindow() async throws {
+        let api = moodClient(now: Date())
+        let seven = try await api.sentimentSummary(ticker: "AAPL", days: 7).ewmaCompound
+        let thirty = try await api.sentimentSummary(ticker: "AAPL", days: 30).ewmaCompound
+        let five = try await api.sentimentSummary(ticker: "AAPL", days: 5).ewmaCompound
+        #expect(thirty - seven > 0.05)   // longer window, slower decay, older positives matter more
+        #expect(abs(seven - five) > 0.001)
     }
 
     @Test func apiClientRisk() async throws {

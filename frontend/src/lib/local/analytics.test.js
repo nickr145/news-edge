@@ -14,8 +14,16 @@ describe('analytics port', () => {
     const x = [0.5, -0.2, 0.1, 0.8, -0.6]
     expect(A.mean(x)).toBeCloseTo(0.12, 9)
     expect(A.std(x)).toBeCloseTo(0.5540758070878028, 9)
-    expect(A.ewma(x)).toBeCloseTo(0.10217, 9)
-    expect(A.ewma([])).toBe(0)
+  })
+
+  it('decayedMean weights by age (half-life), not by article order', () => {
+    expect(A.decayedMean([{ value: 0.2, ageDays: 3 }, { value: 0.6, ageDays: 3 }], 5)).toBeCloseTo(0.4, 12) // equal ages: plain mean
+    expect(A.decayedMean([{ value: 1, ageDays: 0 }, { value: 0, ageDays: 1 }], 1)).toBeCloseTo(1 / 1.5, 12) // older value counts half
+    expect(A.decayedMean([{ value: 1, ageDays: -2 }, { value: 0, ageDays: 0 }], 1)).toBeCloseTo(0.5, 12)    // future timestamps clamp to age 0
+    expect(A.decayedMean([], 1)).toBe(0)
+    // a longer half-life lets older values count more
+    const pts = [{ value: -0.6, ageDays: 0.04 }, { value: 0.8, ageDays: 4 }]
+    expect(A.decayedMean(pts, 10)).toBeGreaterThan(A.decayedMean(pts, 2))
   })
 
   it('risk metrics match the backend', () => {
@@ -55,7 +63,7 @@ describe('analytics port', () => {
   })
 
   it('prediction rule', () => {
-    const rec = (s) => A.predict({ ticker: 'aapl', horizonDays: 5, ewma1d: s, ewma7d: 0, sentimentVolatility: 0, articleVolume24h: 0, price: A.priceFeatures([]) })
+    const rec = (s) => A.predict({ ticker: 'aapl', horizonDays: 5, signal: s, ewma1d: 0, ewma7d: 0, sentimentVolatility: 0, articleVolume24h: 0, price: A.priceFeatures([]) })
     expect(rec(0.2).recommendation).toBe('RISE'); expect(rec(-0.2).recommendation).toBe('FALL'); expect(rec(0.15).recommendation).toBe('STABLE')
     expect(rec(0).confidence).toBe(0.52); expect(rec(5).confidence).toBe(0.85)
     expect(rec(0).ticker).toBe('AAPL')

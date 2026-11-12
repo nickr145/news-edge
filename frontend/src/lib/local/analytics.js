@@ -11,11 +11,20 @@ export function std(v) {
   return Math.sqrt(v.reduce((a, x) => a + (x - m) ** 2, 0) / (v.length - 1))
 }
 
-export function ewma(v, alpha = 0.3) {
-  if (!v.length) return 0
-  let acc = v[0]
-  for (const x of v.slice(1)) acc = alpha * x + (1 - alpha) * acc
-  return acc
+/**
+ * Recency-weighted mean: each value's weight halves every `halfLifeDays` of age. Used for the
+ * "EWMA" stat (half-life = window / 3, so the window matters) and the prediction signal
+ * (half-life = horizon / 3). The backend's per-article EWMA (alpha 0.3) only ever reflected
+ * the latest dozen headlines, whatever the window.
+ */
+export function decayedMean(points, halfLifeDays) {
+  let num = 0, den = 0
+  for (const { value, ageDays } of points) {
+    const w = 0.5 ** (Math.max(ageDays, 0) / halfLifeDays)
+    num += w * value
+    den += w
+  }
+  return den > 0 ? num / den : 0
 }
 
 export const sentiment = (text) => vader.SentimentIntensityAnalyzer.polarity_scores(text || '').compound
@@ -99,15 +108,18 @@ export function priceFeatures(bars) {
   }
 }
 
-/** The backend's fallback rule (no trained model exists in production either). */
-export function predict({ ticker, horizonDays, ewma1d, ewma7d, sentimentVolatility, articleVolume24h, price, now = new Date() }) {
+/**
+ * The backend's fallback rule (no trained model exists in production either), except that `signal`
+ * is the recency-weighted sentiment over the chosen horizon, so the 1/5/14-day buttons differ.
+ */
+export function predict({ ticker, horizonDays, signal, ewma1d, ewma7d, sentimentVolatility, articleVolume24h, price, now = new Date() }) {
   return {
     id: Math.floor(now.getTime() / 1000),
     ticker: String(ticker).toUpperCase(),
     predicted_at: now.toISOString(),
-    recommendation: ewma1d > 0.15 ? 'RISE' : ewma1d < -0.15 ? 'FALL' : 'STABLE',
-    confidence: Math.min(0.85, 0.52 + Math.abs(ewma1d) * 0.35),
-    sentiment_score: ewma1d,
+    recommendation: signal > 0.15 ? 'RISE' : signal < -0.15 ? 'FALL' : 'STABLE',
+    confidence: Math.min(0.85, 0.52 + Math.abs(signal) * 0.35),
+    sentiment_score: signal,
     price_rsi: price.rsi_14,
     feature_importances: {
       ewma_sentiment_1d: ewma1d,
