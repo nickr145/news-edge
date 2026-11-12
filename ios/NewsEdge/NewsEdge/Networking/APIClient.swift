@@ -6,8 +6,13 @@ import Foundation
 final class APIClient {
     static let shared = APIClient()
 
-    private let yahoo = YahooClient.shared
-    private let store = NewsStore.shared
+    private let yahoo: YahooClient
+    private let store: NewsStore
+
+    init(yahoo: YahooClient = .shared, store: NewsStore = .shared) {
+        self.yahoo = yahoo
+        self.store = store
+    }
 
     // MARK: - News
 
