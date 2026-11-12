@@ -66,6 +66,11 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		A1B2C3D4E5F678900000A0F1 /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Shared;
+			sourceTree = "<group>";
+		};
 		5B796535301BEB480078EFE2 /* NewsEdge */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = NewsEdge;
@@ -130,6 +135,7 @@
 				5B796543301BEB4A0078EFE2 /* NewsEdgeTests */,
 				5B79654D301BEB4A0078EFE2 /* NewsEdgeUITests */,
 				A1B2C3D4E5F678900000A002 /* NewsEdgeWidget */,
+				A1B2C3D4E5F678900000A0F1 /* Shared */,
 				5B796534301BEB480078EFE2 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -164,6 +170,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				5B796535301BEB480078EFE2 /* NewsEdge */,
+				A1B2C3D4E5F678900000A0F1 /* Shared */,
 			);
 			name = NewsEdge;
 			packageProductDependencies = (
@@ -232,6 +239,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				A1B2C3D4E5F678900000A002 /* NewsEdgeWidget */,
+				A1B2C3D4E5F678900000A0F1 /* Shared */,
 			);
 			name = NewsEdgeWidgetExtension;
 			packageProductDependencies = (

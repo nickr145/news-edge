@@ -13,3 +13,6 @@ DerivedData/
 
 # Core ML FinBERT (generate with scripts/convert_finbert_coreml.py)
 ios/NewsEdge/NewsEdge/Resources/FinBERT.mlpackage/
+
+# Xcode-generated per-machine workspace settings
+ios/**/xcshareddata/WorkspaceSettings.xcsettings
