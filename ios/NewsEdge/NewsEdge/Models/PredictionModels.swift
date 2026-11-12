@@ -2,14 +2,6 @@ import Foundation
 
 // Mirrors app/schemas/prediction.py
 
-struct PredictionRequest: Encodable {
-    var horizonDays: Int = 5
-
-    enum CodingKeys: String, CodingKey {
-        case horizonDays = "horizon_days"
-    }
-}
-
 struct Prediction: Codable, Identifiable, Equatable {
     let id: Int
     let ticker: String

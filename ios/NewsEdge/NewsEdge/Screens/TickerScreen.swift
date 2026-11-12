@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Ports TickerPage.jsx: loads news/sentiment/risk/price data for a ticker,
-/// polls every 30s, streams live articles over WebSocket, and lets the user
+/// polls every 30s (on-device, via Yahoo Finance), and lets the user
 /// trigger a prediction.
 struct TickerScreen: View {
     let ticker: String
@@ -72,10 +72,7 @@ struct TickerScreen: View {
         .navigationTitle(ticker)
         .navigationBarTitleDisplayMode(.inline)
         .task(id: loadKey) {
-            await subscribeAndPoll()
-        }
-        .task(id: loadKey) {
-            await listenForLiveNews()
+            await loadAndPoll()
         }
     }
 
@@ -136,9 +133,8 @@ struct TickerScreen: View {
 
     // MARK: - Data loading
 
-    private func subscribeAndPoll() async {
+    private func loadAndPoll() async {
         isLoading = true
-        _ = try? await APIClient.shared.subscribe(ticker: ticker, backfillDays: windowDays)
         await refresh()
         isLoading = false
 
@@ -170,29 +166,6 @@ struct TickerScreen: View {
             errorMessage = nil
         } catch {
             errorMessage = "Failed to load data. Retrying…"
-        }
-    }
-
-    /// Reconnects with a fixed backoff on drop/error; SwiftUI cancels this
-    /// task automatically when `loadKey` changes or the view disappears.
-    private func listenForLiveNews() async {
-        while !Task.isCancelled {
-            let socket = NewsSocket()
-            do {
-                for try await article in socket.stream(ticker: ticker) {
-                    articles = Array(dedupe([article] + articles).prefix(100))
-                    let trendHours = min(windowDays * 24, 24 * 30)
-                    async let newSummary = APIClient.shared.sentimentSummary(ticker: ticker, days: windowDays, minRelevance: minRelevance)
-                    async let newTrend = APIClient.shared.sentimentTrend(ticker: ticker, hours: trendHours, minRelevance: minRelevance)
-                    if let value = try? await newSummary { summary = value }
-                    if let value = try? await newTrend { trend = value }
-                }
-            } catch {
-                // Fall through to reconnect below.
-            }
-            socket.disconnect()
-            if Task.isCancelled { break }
-            try? await Task.sleep(for: .seconds(3))
         }
     }
 
