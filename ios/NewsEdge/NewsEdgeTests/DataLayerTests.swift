@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Testing
 @testable import NewsEdge
@@ -278,6 +279,69 @@ struct DataLayerTests {
         let risk = try await APIClient(yahoo: yahoo(), store: NewsStore(directory: tempDir(), yahoo: yahoo())).riskMetrics(ticker: "AAPL")
         #expect(abs(risk.betaToBenchmark - 1) < 1e-9)   // identical series
         #expect(risk.maxDrawdown == 0 && risk.highWaterMark == 139)
+    }
+
+    // MARK: FinBERT model download
+
+    private func sha(_ text: String) -> String { SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined() }
+    private func manifest(corrupt: Bool = false) -> String {
+        #"{"version":1,"files":[{"asset":"model.mil","path":"model.mil","size":5,"sha256":"\#(sha("hello"))"},{"asset":"weights__weight.bin","path":"weights/weight.bin","size":5,"sha256":"\#(corrupt ? sha("nope!") : sha("world"))"}]}"#
+    }
+    private func routeModel(corrupt: Bool = false) {
+        StubProtocol.route("models.test/m/manifest.json", body: manifest(corrupt: corrupt))
+        StubProtocol.route("models.test/m/model.mil", body: "hello")
+        StubProtocol.route("models.test/m/weights__weight.bin", body: "world")
+    }
+    @MainActor private func modelStore(install: URL, bundled: Bool = false) -> FinBERTModelStore {
+        FinBERTModelStore(session: StubProtocol.session, baseURL: URL(string: "https://models.test/m/")!,
+                          installURL: install, bundledPresent: bundled)
+    }
+
+    @MainActor @Test func modelDownloadInstallsVerifiedFiles() async throws {
+        routeModel()
+        let install = tempDir().appendingPathComponent("models/FinBERT.mlmodelc")
+        let store = modelStore(install: install)
+        #expect(store.state == .idle)
+        store.startIfNeeded()
+        await store.waitUntilFinished()
+        #expect(store.state == .ready)
+        #expect(try String(contentsOf: install.appendingPathComponent("model.mil"), encoding: .utf8) == "hello")
+        #expect(try String(contentsOf: install.appendingPathComponent("weights/weight.bin"), encoding: .utf8) == "world")
+        let leftovers = try FileManager.default.contentsOfDirectory(atPath: install.deletingLastPathComponent().path)
+        #expect(leftovers == ["FinBERT.mlmodelc"])   // no staging dirs left behind
+        // A relaunch finds the installed model and does not hit the network.
+        StubProtocol.reset()
+        #expect(modelStore(install: install).state == .ready)
+    }
+
+    @MainActor @Test func modelDownloadRejectsCorruptFile() async throws {
+        routeModel(corrupt: true)
+        let install = tempDir().appendingPathComponent("models/FinBERT.mlmodelc")
+        let store = modelStore(install: install)
+        store.startIfNeeded(); await store.waitUntilFinished()
+        guard case .failed(let message) = store.state else { Issue.record("expected failure, got \(store.state)"); return }
+        #expect(message.contains("verification"))
+        #expect(!FileManager.default.fileExists(atPath: install.path))
+        #expect((try? FileManager.default.contentsOfDirectory(atPath: install.deletingLastPathComponent().path))?.isEmpty ?? true)
+    }
+
+    @MainActor @Test func modelDownloadRetriesAfterFailure() async throws {
+        StubProtocol.route("models.test/m/manifest.json", status: 404, body: "")
+        let install = tempDir().appendingPathComponent("models/FinBERT.mlmodelc")
+        let store = modelStore(install: install)
+        store.startIfNeeded(); await store.waitUntilFinished()
+        #expect({ if case .failed = store.state { true } else { false } }())
+        routeModel()
+        store.retry(); await store.waitUntilFinished()
+        #expect(store.state == .ready)
+    }
+
+    @MainActor @Test func bundledModelSkipsDownload() async throws {
+        routeModel()
+        let store = modelStore(install: tempDir().appendingPathComponent("m.mlmodelc"), bundled: true)
+        store.startIfNeeded(); await store.waitUntilFinished()
+        #expect(store.state == .bundled)
+        #expect(StubProtocol.hitCount("models.test/m/manifest.json") == 0)
     }
 }
 

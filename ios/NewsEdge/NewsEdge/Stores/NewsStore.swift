@@ -14,13 +14,15 @@ actor NewsStore {
     private let google: GoogleNewsClient
     private let score: @Sendable (String) -> Double
     private let companyName: @Sendable (String) -> String?
+    private let scorerID: @Sendable () -> String
 
     init(
         directory: URL? = nil,
         yahoo: YahooClient = .shared,
         google: GoogleNewsClient = GoogleNewsClient(),
         score: @escaping @Sendable (String) -> Double = { Analytics.sentiment($0) },
-        companyName: @escaping @Sendable (String) -> String? = { t in TickerCatalog.all.first { $0.symbol == t.uppercased() }?.name }
+        companyName: @escaping @Sendable (String) -> String? = { t in TickerCatalog.all.first { $0.symbol == t.uppercased() }?.name },
+        scorerID: @escaping @Sendable () -> String = { FinBERTScorer.shared != nil ? "finbert" : "nltagger" }
     ) {
         self.directory = directory
             ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -30,6 +32,7 @@ actor NewsStore {
         self.google = google
         self.score = score
         self.companyName = companyName
+        self.scorerID = scorerID
     }
 
     /// Fetches fresh news, merges it into the cache, and returns everything cached
@@ -61,7 +64,7 @@ actor NewsStore {
     }
 
     private func file(_ ticker: String) -> URL {
-        directory.appendingPathComponent("\(Analytics.yahooSymbol(ticker)).v2.json") // v2: FinBERT scores; v1 files hold NLTagger scores
+        directory.appendingPathComponent("\(Analytics.yahooSymbol(ticker)).v2.\(scorerID()).json") // scores differ per scorer, so never mix them
     }
 
     private func load(_ ticker: String) -> [Article] {
