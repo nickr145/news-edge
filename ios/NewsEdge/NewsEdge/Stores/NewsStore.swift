@@ -20,7 +20,18 @@ actor NewsStore {
     func articles(ticker: String) async throws -> [Article] {
         var byID = Dictionary(load(ticker).map { ($0.id, $0) }, uniquingKeysWith: { $1 })
         do {
-            for article in try await YahooClient.shared.news(ticker: ticker) { byID[article.id] = article }
+            for var article in try await YahooClient.shared.news(ticker: ticker) where byID[article.id] == nil {
+                // FinBERT costs ~70 ms/headline, so only score what the cache hasn't already.
+                let compound = Analytics.sentiment(article.headline)
+                article = Article(
+                    id: article.id, url: article.url, headline: article.headline, summary: article.summary,
+                    body: article.body, source: article.source, publishedAt: article.publishedAt,
+                    sentimentLabel: Analytics.label(compound), compound: compound,
+                    relevanceScore: nil, sourceWeight: article.sourceWeight,
+                    nearEarnings: nil, isSecFiling: nil, symbols: article.symbols
+                )
+                byID[article.id] = article
+            }
         } catch {
             if byID.isEmpty { throw error }
         }

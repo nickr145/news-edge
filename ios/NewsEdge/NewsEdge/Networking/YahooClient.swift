@@ -35,7 +35,7 @@ actor YahooClient {
         return bars
     }
 
-    /// Latest ~50 news items tagged to the ticker (Yahoo gives days, not months). Cached 60s.
+    /// Latest ~50 news items tagged to the ticker (Yahoo gives days, not months), unscored. Cached 60s.
     func news(ticker: String) async throws -> [Article] {
         let url = try makeURL(
             host: "query1.finance.yahoo.com",
@@ -45,7 +45,6 @@ actor YahooClient {
         let search = try decode(SearchResponse.self, from: try await fetch(url, ttl: 60))
         return search.news.compactMap { item in
             guard let link = item.link, let title = item.title, let ts = item.providerPublishTime else { return nil }
-            let compound = Analytics.sentiment(title)
             return Article(
                 id: Self.stableID(item.uuid ?? link),
                 url: link,
@@ -54,8 +53,8 @@ actor YahooClient {
                 body: nil,
                 source: item.publisher,
                 publishedAt: Date(timeIntervalSince1970: TimeInterval(ts)),
-                sentimentLabel: Analytics.label(compound),
-                compound: compound,
+                sentimentLabel: nil,   // scored by NewsStore, only for articles it hasn't seen
+                compound: nil,
                 relevanceScore: nil,
                 sourceWeight: Analytics.sourceWeight(item.publisher),
                 nearEarnings: nil,
