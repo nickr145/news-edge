@@ -31,7 +31,7 @@ actor NewsStore {
     }
 
     private func file(_ ticker: String) -> URL {
-        directory.appendingPathComponent("\(ticker.uppercased()).json")
+        directory.appendingPathComponent("\(ticker.uppercased()).v2.json") // v2: FinBERT scores; v1 files hold NLTagger scores
     }
 
     private func load(_ ticker: String) -> [Article] {

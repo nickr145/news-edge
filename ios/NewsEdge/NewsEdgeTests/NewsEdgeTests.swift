@@ -76,3 +76,45 @@ struct AnalyticsTests {
         #expect(YahooClient.stableID("abc") > 0)
     }
 }
+
+/// Token ids below come from the real HuggingFace ProsusAI/finbert tokenizer.
+struct FinBERTTests {
+    private func tokenizer() throws -> WordPieceTokenizer {
+        let url = try #require(Bundle.main.url(forResource: "finbert_vocab", withExtension: "txt"))
+        return try #require(WordPieceTokenizer(vocabURL: url))
+    }
+
+    @Test func tokenizerMatchesHuggingFace() throws {
+        let t = try tokenizer()
+        let cases: [(String, [Int32])] = [
+            ("Apple beats earnings expectations as iPhone sales surge",
+             [101, 6207, 10299, 16565, 10908, 2004, 18059, 4341, 12058, 102]),
+            ("Tesla's Q3 deliveries: 435,059 units — below estimates!",
+             [101, 26060, 1005, 1055, 1053, 2509, 23534, 1024, 24125, 1010, 5709, 2683, 3197, 1517, 2917, 10035, 999, 102]),
+            ("Café sales hit record; S&P 500 closes at 5,100.25",
+             [101, 7668, 4341, 2718, 2501, 1025, 1055, 1004, 1052, 3156, 14572, 2012, 1019, 1010, 2531, 1012, 2423, 102]),
+            ("Unbelievably overvalued? NVDA's P/E ratio sparks debate",
+             [101, 4895, 8671, 2666, 3567, 6321, 2058, 10175, 5657, 2094, 1029, 1050, 16872, 2050, 1005, 1055, 1052, 1013, 1041, 6463, 12300, 5981, 102]),
+        ]
+        for (text, expected) in cases {
+            let (ids, mask) = t.encode(text, length: 64)
+            #expect(Array(ids.prefix(expected.count)) == expected, "\(text)")
+            #expect(ids.count == 64 && mask.reduce(0, +) == Int32(expected.count))
+            #expect(ids.dropFirst(expected.count).allSatisfy { $0 == 0 })
+        }
+    }
+
+    @Test func tokenizerTruncatesKeepingSep() throws {
+        let (ids, mask) = try tokenizer().encode(String(repeating: "stock ", count: 200), length: 64)
+        #expect(ids.count == 64 && ids[63] == 102 && mask.allSatisfy { $0 == 1 })
+    }
+
+    /// Skipped (not failed) when the Core ML model hasn't been generated.
+    @Test func scorerSignsAreSane() throws {
+        guard let scorer = FinBERTScorer.shared else { return }
+        let up = try #require(scorer.score("Apple beats earnings expectations as iPhone sales surge"))
+        let down = try #require(scorer.score("Apple shares fall after regulators announce antitrust probe"))
+        let flat = try #require(scorer.score("Apple to hold annual developer conference in June"))
+        #expect(up > 0.7 && down < -0.7 && abs(flat) < 0.2)
+    }
+}

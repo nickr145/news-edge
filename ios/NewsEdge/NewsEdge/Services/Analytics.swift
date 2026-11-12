@@ -26,8 +26,12 @@ enum Analytics {
 
     // MARK: - Sentiment
 
-    /// Apple's on-device sentiment model, -1...1. Replaces server-side VADER/FinBERT.
+    /// FinBERT (Core ML) when bundled, else Apple's general-purpose NLTagger. -1...1.
     static func sentiment(_ text: String) -> Double {
+        FinBERTScorer.shared?.score(text) ?? nlTaggerSentiment(text)
+    }
+
+    static func nlTaggerSentiment(_ text: String) -> Double {
         let tagger = NLTagger(tagSchemes: [.sentimentScore])
         tagger.string = text
         let (tag, _) = tagger.tag(at: text.startIndex, unit: .paragraph, scheme: .sentimentScore)
