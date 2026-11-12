@@ -10,8 +10,8 @@ struct Article: Codable, Identifiable, Equatable {
     let body: String?
     let source: String?
     let publishedAt: Date
-    let sentimentLabel: String?
-    let compound: Double?
+    var sentimentLabel: String?
+    var compound: Double?
     let relevanceScore: Double?
     let sourceWeight: Double?
     let nearEarnings: Bool?

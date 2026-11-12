@@ -64,12 +64,17 @@ enum Analytics {
         sourceWeights[normalize(source ?? "")] ?? 1.0
     }
 
+    /// Yahoo writes share classes with a dash (`BRK-B`); users and the catalog use `BRK.B`.
+    static func yahooSymbol(_ ticker: String) -> String {
+        ticker.trimmingCharacters(in: .whitespaces).uppercased().replacingOccurrences(of: ".", with: "-")
+    }
+
     static func relevance(ticker: String, headline: String, symbols: [String]) -> Double {
         let t = ticker.lowercased()
         let h = headline.lowercased()
-        let syms = symbols.map { $0.uppercased() }
+        let syms = symbols.map(yahooSymbol)
         var score = 0.0
-        if syms.contains(ticker.uppercased()) { score += 0.45 }
+        if syms.contains(yahooSymbol(ticker)) { score += 0.45 }
         if h.contains(t) { score += 0.35 }
         if !syms.isEmpty { score -= min(0.25, 0.04 * Double(max(syms.count - 1, 0))) }
         if h.contains(t) { score += 0.05 }

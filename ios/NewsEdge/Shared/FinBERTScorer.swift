@@ -74,10 +74,31 @@ struct WordPieceTokenizer {
 }
 
 /// On-device FinBERT via Core ML (see scripts/convert_finbert_coreml.py).
-/// `shared` is nil when the model isn't bundled; callers fall back to NLTagger.
+/// `shared` is nil when no model is available (neither bundled nor downloaded by
+/// FinBERTModelStore); callers fall back to NLTagger. Call `reload()` once a download lands.
 final class FinBERTScorer: @unchecked Sendable {
     static let sequenceLength = 64 // must match SEQ_LEN in the conversion script
-    static let shared: FinBERTScorer? = FinBERTScorer()
+
+    /// Where FinBERTModelStore installs the downloaded, compiled model.
+    static var downloadedModelURL: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("models/FinBERT.mlmodelc", isDirectory: true)
+    }
+
+    private static let sharedLock = NSLock()
+    nonisolated(unsafe) private static var instance: FinBERTScorer?
+    nonisolated(unsafe) private static var attempted = false
+
+    static var shared: FinBERTScorer? {
+        sharedLock.lock(); defer { sharedLock.unlock() }
+        if !attempted { attempted = true; instance = FinBERTScorer() }
+        return instance
+    }
+
+    /// Forget a cached "no model" result (or a stale instance) so the next `shared` looks again.
+    static func reload() {
+        sharedLock.lock(); attempted = false; sharedLock.unlock()
+    }
 
     private let model: MLModel
     private let tokenizer: WordPieceTokenizer
@@ -85,7 +106,9 @@ final class FinBERTScorer: @unchecked Sendable {
     private var memo: [String: Double] = [:]
 
     private init?() {
-        guard let modelURL = Bundle.main.url(forResource: "FinBERT", withExtension: "mlmodelc"),
+        let downloaded = Self.downloadedModelURL
+        guard let modelURL = Bundle.main.url(forResource: "FinBERT", withExtension: "mlmodelc")
+                ?? (FileManager.default.fileExists(atPath: downloaded.path) ? downloaded : nil),
               let vocabURL = Bundle.main.url(forResource: "finbert_vocab", withExtension: "txt"),
               let tokenizer = WordPieceTokenizer(vocabURL: vocabURL),
               let model = try? MLModel(contentsOf: modelURL)

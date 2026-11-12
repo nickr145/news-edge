@@ -21,4 +21,18 @@ enum APIError: Error, LocalizedError {
             return "Network error: \(error.localizedDescription)"
         }
     }
+
+    /// Short, user-facing text for the ticker screen's error banner.
+    var userMessage: String {
+        switch self {
+        case .transport(let error):
+            return (error as? URLError)?.code == .notConnectedToInternet
+                ? "You're offline. Retrying…" : "Network problem. Retrying…"
+        case .http(let status, _):
+            return status == 429 ? "The data source is rate-limiting requests. Retrying…"
+                                 : "Data source error (\(status)). Retrying…"
+        default:
+            return "Failed to load data. Retrying…"
+        }
+    }
 }

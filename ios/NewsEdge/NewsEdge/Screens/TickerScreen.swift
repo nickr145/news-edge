@@ -163,9 +163,10 @@ struct TickerScreen: View {
             trend = newTrend
             risk = newRisk
             bars = newBars
-            errorMessage = nil
+            errorMessage = newBars.isEmpty && newArticles.isEmpty
+                ? "No market data found for \(ticker). Check the symbol." : nil
         } catch {
-            errorMessage = "Failed to load data. Retrying…"
+            errorMessage = (error as? APIError)?.userMessage ?? "Failed to load data. Retrying…"
         }
     }
 
