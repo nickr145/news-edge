@@ -16,9 +16,11 @@ struct Article: Codable, Identifiable, Equatable {
     let sourceWeight: Double?
     let nearEarnings: Bool?
     let isSecFiling: Bool?
+    /// Tickers Yahoo tagged the article with; feeds `Analytics.relevance`.
+    var symbols: [String]? = nil
 
     enum CodingKeys: String, CodingKey {
-        case id, url, headline, summary, body, source, compound
+        case id, url, headline, summary, body, source, compound, symbols
         case publishedAt = "published_at"
         case sentimentLabel = "sentiment_label"
         case relevanceScore = "relevance_score"
@@ -62,19 +64,4 @@ struct SentimentTrendPoint: Codable, Identifiable, Equatable {
 struct SentimentTrend: Codable, Equatable {
     let ticker: String
     let points: [SentimentTrendPoint]
-}
-
-/// Response body of `POST /api/news/subscribe/{ticker}`.
-struct SubscribeResponse: Codable, Equatable {
-    let ok: Bool
-    let ticker: String
-    let subscribedTickers: [String]
-    let backfillDays: Int
-    let status: String
-
-    enum CodingKeys: String, CodingKey {
-        case ok, ticker, status
-        case subscribedTickers = "subscribed_tickers"
-        case backfillDays = "backfill_days"
-    }
 }

@@ -1,6 +1,6 @@
 # NewsEdge
 
-Real-time stock news sentiment platform with historical backfill, live streaming ingestion, ticker relevance filtering, ML-powered predictions, risk analytics, and both a React web dashboard and a native iOS app sharing one backend.
+Real-time stock news sentiment platform with historical backfill, live streaming ingestion, ticker relevance filtering, ML-powered predictions, risk analytics, and a React web dashboard backed by a FastAPI service, and a standalone native iOS app that needs no backend.
 
 **Live:** https://news-edge-ai.vercel.app
 
@@ -51,10 +51,11 @@ Real-time stock news sentiment platform with historical backfill, live streaming
 - History window selector (`1 / 7 / 30 / 90 days`) and min relevance selector (`0.20 / 0.35 / 0.50 / 0.70`).
 
 ### iOS App
-- Native SwiftUI app (`ios/NewsEdge`) — same backend and endpoints as the web dashboard, dark theme ported 1:1 from the web design tokens.
+- Native SwiftUI app (`ios/NewsEdge`) — runs with **no backend**, Apple Stocks-style: prices and news come straight from keyless Yahoo Finance endpoints (`YahooClient`), news is accrued on device for up to 90 days (`NewsStore`), and sentiment, relevance, risk metrics and the prediction rule are computed locally (`Services/Analytics.swift`, a port of the backend math with unit tests checked against the Python output). Dark theme ported 1:1 from the web design tokens.
+- Tradeoffs: Yahoo's endpoints are unofficial, news history starts at install (Yahoo serves only the last day or two), sentiment uses Apple's on-device `NLTagger` rather than FinBERT/VADER, and there is no trained model (the RISE/STABLE/FALL rule matches the backend's fallback).
 - Watchlist as card tiles (ticker, EWMA and article count as labeled sub-cells) with swipe-to-remove; tapping a card opens that ticker's detail screen.
-- Ticker detail screen: sentiment stats, dual price/sentiment mini-charts, risk metrics, prediction card with SHAP feature bars, and a relevance-filtered live news feed over the same WebSocket the web app uses.
-- Home-screen widget (`NewsEdgeWidget`) showing 7-day EWMA sentiment for watchlisted tickers, refreshing independently of the app.
+- Ticker detail screen: sentiment stats, dual price/sentiment mini-charts, risk metrics, prediction card with SHAP feature bars, and a relevance-filtered news feed that refreshes every 30 seconds.
+- Home-screen widget (`NewsEdgeWidget`) showing 7-day EWMA sentiment for watchlisted tickers, refreshing independently of the app (computed from Yahoo news directly).
 
 ## Main Endpoints
 

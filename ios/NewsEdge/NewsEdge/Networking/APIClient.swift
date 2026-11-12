@@ -1,22 +1,13 @@
 import Foundation
 
-/// URLSession-based client for the NewsEdge FastAPI backend.
-/// One method per endpoint actually called by `frontend/src/lib/api.js` consumers
-/// (TickerPage.jsx, WatchlistPanel.jsx) — see the handoff brief, Task 2.
+/// On-device replacement for the old FastAPI client: same method signatures, but
+/// data comes straight from Yahoo Finance (`YahooClient`), is accrued in `NewsStore`,
+/// and is scored/aggregated locally with `Analytics`. No NewsEdge backend involved.
 final class APIClient {
     static let shared = APIClient()
 
-    private let baseURL: URL
-    private let session: URLSession
-    private let decoder: JSONDecoder
-    private let encoder: JSONEncoder
-
-    init(baseURL: URL = APIConfig.baseURL, session: URLSession = .shared) {
-        self.baseURL = baseURL
-        self.session = session
-        self.decoder = JSONCoding.makeDecoder()
-        self.encoder = JSONEncoder()
-    }
+    private let yahoo = YahooClient.shared
+    private let store = NewsStore.shared
 
     // MARK: - News
 
@@ -27,15 +18,8 @@ final class APIClient {
         minRelevance: Double = 0.35,
         includeMock: Bool = false
     ) async throws -> [Article] {
-        try await get(
-            "/api/news/\(ticker)",
-            query: [
-                "days": "\(days)",
-                "limit": "\(limit)",
-                "min_relevance": "\(minRelevance)",
-                "include_mock": "\(includeMock)",
-            ]
-        )
+        let all = try await relevant(ticker: ticker, since: daysAgo(Double(days)), minRelevance: minRelevance)
+        return Array(all.prefix(limit))
     }
 
     func sentimentSummary(
@@ -44,13 +28,17 @@ final class APIClient {
         minRelevance: Double = 0.35,
         includeMock: Bool = false
     ) async throws -> SentimentSummary {
-        try await get(
-            "/api/news/\(ticker)/sentiment",
-            query: [
-                "days": "\(days)",
-                "min_relevance": "\(minRelevance)",
-                "include_mock": "\(includeMock)",
-            ]
+        let items = try await relevant(ticker: ticker, since: daysAgo(Double(days)), minRelevance: minRelevance)
+        let weighted = items.reversed().map { ($0.compound ?? 0) * ($0.sourceWeight ?? 1) } // oldest first for EWMA
+        var labels = ["POSITIVE": 0, "NEUTRAL": 0, "NEGATIVE": 0]
+        for item in items { labels[item.sentimentLabel ?? "NEUTRAL", default: 0] += 1 }
+        return SentimentSummary(
+            ticker: ticker.uppercased(),
+            count: items.count,
+            meanCompound: Analytics.mean(weighted),
+            stdCompound: Analytics.std(weighted),
+            ewmaCompound: Analytics.ewma(weighted),
+            labelDistribution: labels
         )
     }
 
@@ -60,108 +48,74 @@ final class APIClient {
         minRelevance: Double = 0.35,
         includeMock: Bool = false
     ) async throws -> SentimentTrend {
-        try await get(
-            "/api/news/\(ticker)/trend",
-            query: [
-                "hours": "\(hours)",
-                "min_relevance": "\(minRelevance)",
-                "include_mock": "\(includeMock)",
-            ]
-        )
-    }
-
-    @discardableResult
-    func subscribe(
-        ticker: String,
-        backfillDays: Int = 30,
-        webBackfill: Bool = true
-    ) async throws -> SubscribeResponse {
-        try await postEmpty(
-            "/api/news/subscribe/\(ticker)",
-            query: [
-                "backfill_days": "\(backfillDays)",
-                "web_backfill": "\(webBackfill)",
-            ]
-        )
+        let items = try await relevant(ticker: ticker, since: daysAgo(Double(hours) / 24), minRelevance: minRelevance)
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(identifier: "UTC")!
+        let buckets = Dictionary(grouping: items) { utc.startOfDay(for: $0.publishedAt) }
+        let points = buckets.keys.sorted().map { day -> SentimentTrendPoint in
+            let scores = buckets[day]!.map { ($0.compound ?? 0) * ($0.sourceWeight ?? 1) }
+            return SentimentTrendPoint(bucket: day, meanCompound: Analytics.mean(scores), articleCount: scores.count)
+        }
+        return SentimentTrend(ticker: ticker.uppercased(), points: points)
     }
 
     // MARK: - Price
 
     func priceBars(ticker: String, limit: Int) async throws -> [PriceBar] {
-        try await get("/api/price/\(ticker)/bars", query: ["limit": "\(limit)"])
+        Array(try await yahoo.bars(ticker: ticker).suffix(limit))
     }
 
     func riskMetrics(ticker: String, benchmark: String = "SPY", days: Int = 365) async throws -> RiskMetrics {
-        try await get(
-            "/api/price/\(ticker)/risk",
-            query: ["benchmark": benchmark, "days": "\(days)"]
-        )
+        async let bars = yahoo.bars(ticker: ticker)
+        async let bench = yahoo.bars(ticker: benchmark)
+        return Analytics.riskMetrics(bars: try await bars, benchmark: try await bench)
     }
 
     // MARK: - Prediction
 
     func predictSync(ticker: String, horizonDays: Int) async throws -> Prediction {
-        try await post("/api/predict/\(ticker)/sync", body: PredictionRequest(horizonDays: horizonDays))
+        async let bars = yahoo.bars(ticker: ticker)
+        async let one = relevant(ticker: ticker, since: daysAgo(1), minRelevance: 0.35)
+        async let seven = relevant(ticker: ticker, since: daysAgo(7), minRelevance: 0.35)
+        async let raw = store.articles(ticker: ticker)
+
+        func ewma(_ items: [Article]) -> Double {
+            Analytics.ewma(items.reversed().map { ($0.compound ?? 0) * ($0.sourceWeight ?? 1) })
+        }
+        let allArticles = try await raw
+        let week = allArticles.filter { $0.publishedAt >= daysAgo(7) }.map { $0.compound ?? 0 }
+        return Analytics.predict(
+            ticker: ticker,
+            horizonDays: horizonDays,
+            ewma1d: ewma(try await one),
+            ewma7d: ewma(try await seven),
+            sentimentVolatility: Analytics.std(week),
+            articleVolume24h: Double(allArticles.filter { $0.publishedAt >= daysAgo(1) }.count),
+            price: Analytics.priceFeatures(bars: try await bars)
+        )
     }
 
-    // MARK: - Request plumbing
+    // MARK: - Helpers
 
-    private func get<T: Decodable>(_ path: String, query: [String: String] = [:]) async throws -> T {
-        let request = try buildRequest(method: "GET", path: path, query: query)
-        return try await send(request)
-    }
+    private func daysAgo(_ days: Double) -> Date { Date().addingTimeInterval(-days * 86_400) }
 
-    private func postEmpty<T: Decodable>(_ path: String, query: [String: String] = [:]) async throws -> T {
-        let request = try buildRequest(method: "POST", path: path, query: query)
-        return try await send(request)
-    }
-
-    private func post<Body: Encodable, T: Decodable>(
-        _ path: String,
-        body: Body,
-        query: [String: String] = [:]
-    ) async throws -> T {
-        var request = try buildRequest(method: "POST", path: path, query: query)
-        request.httpBody = try encoder.encode(body)
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        return try await send(request)
-    }
-
-    private func buildRequest(method: String, path: String, query: [String: String]) throws -> URLRequest {
-        guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
-            throw APIError.invalidURL
+    /// Cached + fresh articles since `since`, headline-deduped (newest kept), scored for
+    /// relevance to `ticker` and filtered at `minRelevance`. Newest first.
+    private func relevant(ticker: String, since: Date, minRelevance: Double) async throws -> [Article] {
+        var seen = Set<String>()
+        var out: [Article] = []
+        for article in try await store.articles(ticker: ticker) where article.publishedAt >= since {
+            guard seen.insert(Analytics.dedupKey(article.headline)).inserted else { continue }
+            let score = Analytics.relevance(ticker: ticker, headline: article.headline, symbols: article.symbols ?? [])
+            guard score >= minRelevance else { continue }
+            out.append(Article(
+                id: article.id, url: article.url, headline: article.headline, summary: article.summary,
+                body: article.body, source: article.source, publishedAt: article.publishedAt,
+                sentimentLabel: article.sentimentLabel, compound: article.compound,
+                relevanceScore: (score * 10_000).rounded() / 10_000, sourceWeight: article.sourceWeight,
+                nearEarnings: article.nearEarnings, isSecFiling: article.isSecFiling, symbols: article.symbols
+            ))
         }
-        components.path += path
-        if !query.isEmpty {
-            components.queryItems = query.map { URLQueryItem(name: $0.key, value: $0.value) }
-        }
-        guard let url = components.url else { throw APIError.invalidURL }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = method
-        return request
-    }
-
-    private func send<T: Decodable>(_ request: URLRequest) async throws -> T {
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await session.data(for: request)
-        } catch {
-            throw APIError.transport(error)
-        }
-
-        guard let http = response as? HTTPURLResponse else {
-            throw APIError.invalidResponse
-        }
-        guard (200..<300).contains(http.statusCode) else {
-            throw APIError.http(status: http.statusCode, body: String(data: data, encoding: .utf8))
-        }
-
-        do {
-            return try decoder.decode(T.self, from: data)
-        } catch {
-            throw APIError.decoding(error)
-        }
+        return out
     }
 }
