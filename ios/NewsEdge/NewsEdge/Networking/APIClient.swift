@@ -32,7 +32,7 @@ final class APIClient {
         let weighted = items.reversed().map { ($0.compound ?? 0) * ($0.sourceWeight ?? 1) } // oldest first for EWMA
         var labels = ["POSITIVE": 0, "NEUTRAL": 0, "NEGATIVE": 0]
         for item in items { labels[item.sentimentLabel ?? "NEUTRAL", default: 0] += 1 }
-        return SentimentSummary(
+        let summary = SentimentSummary(
             ticker: ticker.uppercased(),
             count: items.count,
             meanCompound: Analytics.mean(weighted),
@@ -40,6 +40,8 @@ final class APIClient {
             ewmaCompound: Analytics.ewma(weighted),
             labelDistribution: labels
         )
+        if days == 7, minRelevance == 0.35 { SentimentSnapshot.publish(summary) }
+        return summary
     }
 
     func sentimentTrend(

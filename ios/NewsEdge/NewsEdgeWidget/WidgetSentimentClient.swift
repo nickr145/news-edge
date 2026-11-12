@@ -25,7 +25,18 @@ private struct SearchPayload: Decodable {
 }
 
 enum WidgetAPI {
+    /// Prefers the app's FinBERT-scored snapshot (SentimentSnapshot.swift in the app target),
+    /// if under 12h old; otherwise computes from Yahoo with NLTagger.
     static func fetchSentiment(ticker: String, days: Int = 7) async -> WidgetTickerSentiment {
+        let shared = UserDefaults(suiteName: "group.nr.NewsEdge")
+        if let snap = (shared?.dictionary(forKey: "newsedge_sentiment_snapshot") as? [String: [Double]])?[ticker.uppercased()],
+           snap.count == 3, Date().timeIntervalSince1970 - snap[2] < 12 * 3600 {
+            return WidgetTickerSentiment(ticker: ticker, ewmaCompound: snap[0], count: Int(snap[1]))
+        }
+        return await fetchFromYahoo(ticker: ticker, days: days)
+    }
+
+    private static func fetchFromYahoo(ticker: String, days: Int) async -> WidgetTickerSentiment {
         let empty = WidgetTickerSentiment(ticker: ticker, ewmaCompound: nil, count: 0)
         var components = URLComponents(string: "https://query1.finance.yahoo.com/v1/finance/search")!
         components.queryItems = [
