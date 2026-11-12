@@ -56,6 +56,22 @@ Real-time stock news sentiment platform with historical backfill, live streaming
 - Ticker detail screen: sentiment stats, dual price/sentiment mini-charts, risk metrics, prediction card with SHAP feature bars, and a relevance-filtered live news feed over the same WebSocket the web app uses.
 - Home-screen widget (`NewsEdgeWidget`) showing 7-day EWMA sentiment for watchlisted tickers, refreshing independently of the app.
 
+## Backendless web mode (prototype)
+
+The web app can run without the FastAPI backend, like the iOS app: build or run it with `VITE_BACKENDLESS=1` and every `api.get/post` call is answered in the browser (`frontend/src/lib/local/`).
+
+```bash
+cd frontend && npm install
+VITE_BACKENDLESS=1 npm run dev      # http://localhost:5173, no Docker/Railway needed
+npm test                            # analytics + data-layer tests (vitest)
+```
+
+- **Data:** Yahoo Finance (bars + news), Nasdaq historical quotes as the price fallback, and Google News RSS for a first-open history backfill. Browsers can't call these directly (no CORS headers), so they go through one tiny allow-listed proxy, `api/proxy.mjs`: a Vercel Function in production and a Vite middleware in `npm run dev`. It forwards only four fixed targets and validates every parameter, but it is still a (stateless) serverless function, so "no backend" means no always-on server, database or Redis.
+- **Math:** `analytics.js` ports the backend's EWMA, relevance, dedup, risk metrics, RSI/Bollinger features and the RISE/STABLE/FALL rule; tests use values produced by the Python code.
+- **Sentiment:** VADER (`vader-sentiment`, the backend's default engine). FinBERT does not run in the browser here, and VADER is noticeably cruder on headlines than the FinBERT the iOS app uses.
+- **Storage:** articles accrue in `localStorage` (up to 90 days) and the last good bars are cached, so history starts at the first visit.
+- **Without the flag** the app talks to the backend exactly as before, so the Railway backend can only be retired once this mode (or an equivalent) ships.
+
 ## Main Endpoints
 
 - `GET /health`

@@ -6,7 +6,7 @@ import PriceChart from '../components/PriceChart'
 import RiskPanel from '../components/RiskPanel'
 import SentimentPanel from '../components/SentimentPanel'
 import { useWatchlist } from '../hooks/useWatchlist'
-import { api, newsSocketUrl } from '../lib/api'
+import { api, backendless, newsSocketUrl } from '../lib/api'
 
 export default function TickerPage() {
   const { symbol } = useParams()
@@ -76,7 +76,7 @@ export default function TickerPage() {
   }, [ticker, windowDays, minRelevance])
 
   useEffect(() => {
-    if (!ticker) return
+    if (!ticker || backendless) return // backendless mode refreshes via the 30s poll above
     const ws = new WebSocket(newsSocketUrl(ticker))
     ws.onmessage = (evt) => {
       const article = JSON.parse(evt.data)
