@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 import proxyHandler from '../api/proxy.mjs'
 
 // Serves the same allow-listed proxy that Vercel runs in production, so
-// `VITE_BACKENDLESS=1 npm run dev` works without the Vercel CLI.
+// `npm run dev` works without the Vercel CLI.
 const devProxy = {
   name: 'newsedge-dev-proxy',
   configureServer(server) {

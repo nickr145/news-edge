@@ -6,7 +6,7 @@ import PriceChart from '../components/PriceChart'
 import RiskPanel from '../components/RiskPanel'
 import SentimentPanel from '../components/SentimentPanel'
 import { useWatchlist } from '../hooks/useWatchlist'
-import { api, backendless, newsSocketUrl } from '../lib/api'
+import { api } from '../lib/api'
 
 export default function TickerPage() {
   const { symbol } = useParams()
@@ -73,20 +73,6 @@ export default function TickerPage() {
       if (!document.hidden) load()
     }, 30000)
     return () => clearInterval(id)
-  }, [ticker, windowDays, minRelevance])
-
-  useEffect(() => {
-    if (!ticker || backendless) return // backendless mode refreshes via the 30s poll above
-    const ws = new WebSocket(newsSocketUrl(ticker))
-    ws.onmessage = (evt) => {
-      const article = JSON.parse(evt.data)
-      setArticles((prev) => dedupeArticles([article, ...prev]).slice(0, 100))
-      const trendHours = Math.min(windowDays * 24, 24 * 30)
-      api.get(`/api/news/${ticker}/sentiment`, { params: { days: windowDays, min_relevance: minRelevance, include_mock: false } }).then((r) => setSummary(r.data)).catch(() => {})
-      api.get(`/api/news/${ticker}/trend`, { params: { hours: trendHours, min_relevance: minRelevance, include_mock: false } }).then((r) => setTrend(r.data)).catch(() => {})
-    }
-    ws.onerror = () => {}
-    return () => ws.close()
   }, [ticker, windowDays, minRelevance])
 
   const triggerPrediction = async () => {

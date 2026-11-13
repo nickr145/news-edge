@@ -1,89 +1,48 @@
 # NewsEdge
 
-Stock news sentiment platform: ticker relevance filtering, recency-weighted sentiment, risk analytics and a RISE/STABLE/FALL signal. Both clients, a React web app and a native iOS app, run **without a backend** (the web app is served from Vercel and the iOS app is fully on-device). The FastAPI service under `app/` is the original backend; it is no longer deployed and is kept only as a legacy reference.
+Stock news sentiment for a watchlist you choose: it turns headlines into recency-weighted sentiment, risk metrics and a RISE/STABLE/FALL signal (a direction heuristic, not trading advice). A React web app and a native SwiftUI iOS app (with a widget) both run **without a backend of their own**.
 
 **Live:** https://news-edge-ai.vercel.app
 
-## Features
+## Architecture
 
-Sections up to "iOS App" describe the legacy FastAPI backend (`app/`); the clients' current behavior is in "iOS App" and the sections after it.
+- **Data (public, keyless):** Yahoo Finance (bars, news, symbol search), Nasdaq historical quotes as the price fallback, Google News RSS for first-open history and indirect-relevance searches.
+- **Web (`frontend/`):** React + Vite on Vercel. Browsers can't call those sources directly (no CORS), so one allow-listed Vercel Function, `api/proxy.mjs`, forwards five fixed targets with validated parameters. Everything else (sentiment, relevance, grouping, risk, the signal) runs in the browser (`frontend/src/lib/local/`). Articles accrue in `localStorage` for up to 90 days, so history starts at the first visit.
+- **iOS (`ios/NewsEdge`):** calls the same sources directly and runs everything on device, with FinBERT (Core ML) for sentiment.
+- **Shared data:** `data/news_profiles.json` and `data/news_background.json` are the single source of truth; `python3 scripts/sync_news_profiles.py` copies them into the web and iOS apps (`--check` verifies they match).
+- The original FastAPI/Celery/Postgres backend was removed after production moved off Railway. It is in git history up to commit `99fc5b3`.
 
-### Data + Ingestion
-- Alpaca News WebSocket ingestion for real-time events.
-- Historical backfill via Alpaca News REST on ticker subscribe.
-- Web backfill via web scraping as a secondary source.
-- Redis Streams buffer and Celery workers for async persistence and scoring.
-- PostgreSQL (or SQLite fallback) for articles, sentiment scores, predictions, and price labels.
-- Overfetch-then-filter pattern ensures article counts are consistent across endpoints.
+## Web app
 
-### NLP + Analytics
-- FinBERT (financial-domain transformer) as the default sentiment engine, VADER as fallback.
-- Configurable via `SENTIMENT_MODEL` env var (`finbert` or `vader`).
-- Batch inference (`score_many`) for efficient backfill throughput.
-- Rolling sentiment stats: mean, std, EWMA.
-- Relevance scoring to suppress weak cross-market articles.
-- Daily sentiment trend bucketing using article publish date for accurate historical spread.
+- Autocomplete search by symbol or company name, a watchlist in `localStorage` (7-day EWMA sentiment and article count per ticker), a price and sentiment overlay chart, a sentiment trend and label distribution, a risk panel, a prediction card with a 1/5/14-day horizon, and an event-grouped news feed refreshed every 30 seconds.
+- History window (1/7/30/90 days) and minimum relevance (0.20/0.35/0.50/0.70) selectors.
+- **Sentiment:** VADER (`vader-sentiment`). FinBERT does not run in the browser here, and VADER is noticeably cruder on headlines than the FinBERT the iOS app uses.
+- **Prediction:** no trained model. A rule on recency-weighted sentiment over the horizon (RISE above +0.15, FALL below -0.15, else STABLE); the card lists the input feature values (sentiment, RSI, momentum, Bollinger position, volume ratio).
 
-### ML + Prediction
-- XGBoost model trained on sentiment features + technical indicators (RSI, momentum, Bollinger Band position, volume ratio).
-- SHAP explanations returned with every prediction, showing feature contributions to the signal.
-- Prediction horizon: 1, 5, or 14 days. The legacy backend stores it but its fallback rule ignores it (it always uses the 1-day EWMA); the iOS app and the backendless web mode use it (see below).
-- Prediction falls back to a sentiment-threshold rule (`RISE` above +0.15 EWMA, `FALL` below -0.15, else `STABLE`) when no trained model artifact is available or there's insufficient data to train one.
-- 5-day forward return labels (`RISE` / `STABLE` / `FALL` at ±2% threshold) persisted to `price_labels` table via Alpaca bars.
-- Celery Beat schedule:
-  - Daily at 01:00 UTC: refresh price labels for all tracked tickers.
-  - Weekly Monday at 03:00 UTC: retrain XGBoost model on combined dataset across all tickers.
+```bash
+cd frontend && npm install
+npm run dev      # http://localhost:5173 (the dev server also serves /api/proxy)
+npm test         # analytics + data-layer tests (vitest)
+npm run build    # output in frontend/dist
+```
 
-### Risk Metrics
-- Annualized volatility.
-- Beta vs benchmark (default `SPY`).
-- Max drawdown.
-- High-water mark.
-- Cumulative return.
+Deploy: the Vercel project builds with `vercel.json` and needs no environment variables.
 
-### Frontend
-- React + Vite dashboard.
-- Autocomplete search bar — matches by ticker symbol and company name (e.g. typing `"amazon"` or `"bank america"` resolves to the correct ticker). Keyboard navigation supported.
-- Watchlist persisted to `localStorage` — add/remove tickers from any ticker page, view a live mini-dashboard on the home page showing 7-day EWMA sentiment and article count per ticker.
-- Dual-axis price & sentiment overlay chart — close price and daily sentiment score on a shared time axis, gaps bridged over non-trading days.
-- Sentiment trend chart and label distribution chart.
-- Prediction card with interactive horizon selector (1 / 5 / 14 days) and SHAP bar chart showing top 5 feature contributions.
-- Risk panel with all risk metrics.
-- Relevance-filtered live news feed via WebSocket.
-- History window selector (`1 / 7 / 30 / 90 days`) and min relevance selector (`0.20 / 0.35 / 0.50 / 0.70`).
-
-### iOS App
-- Native SwiftUI app (`ios/NewsEdge`) — runs with **no backend**, Apple Stocks-style: prices and news come straight from keyless Yahoo Finance endpoints (`YahooClient`), news is accrued on device for up to 90 days (`NewsStore`), and FinBERT sentiment, relevance, risk metrics and the prediction rule are computed locally (`Services/Analytics.swift`, a port of the backend math with unit tests checked against the Python output). Dark theme ported 1:1 from the web design tokens.
-- Tradeoffs: Yahoo's endpoints are unofficial (daily bars fall back to Nasdaq's historical API, and the last good bars are cached on disk), Yahoo serves only the last day or two of news so the first time a ticker is opened it is backfilled from Google News RSS (sampled across ~4 weeks, so history is sparse and starts at the first open), sentiment is scored on device by FinBERT converted to Core ML (~105 MB, 8-bit weights; generate it with `scripts/convert_finbert_coreml.py` — it is gitignored, and without it the app falls back to Apple's `NLTagger`; the widget always uses `NLTagger`), and there is no trained model (the RISE/STABLE/FALL rule matches the backend's fallback).
+## iOS app
+- Native SwiftUI app (`ios/NewsEdge`) — runs with **no backend**, Apple Stocks-style: prices and news come straight from keyless Yahoo Finance endpoints (`YahooClient`), news is accrued on device for up to 90 days (`NewsStore`), and FinBERT sentiment, relevance, risk metrics and the prediction rule are computed locally (`Services/Analytics.swift`, a port of the original Python backend's math, with unit tests checked against its output). Dark theme ported 1:1 from the web design tokens.
+- Tradeoffs: Yahoo's endpoints are unofficial (daily bars fall back to Nasdaq's historical API, and the last good bars are cached on disk), Yahoo serves only the last day or two of news so the first time a ticker is opened it is backfilled from Google News RSS (sampled across ~4 weeks, so history is sparse and starts at the first open), sentiment is scored on device by FinBERT converted to Core ML (~105 MB, 8-bit weights; generate it with `scripts/convert_finbert_coreml.py` — it is gitignored, and without it the app falls back to Apple's `NLTagger`; the widget always uses `NLTagger`), and there is no trained model (the RISE/STABLE/FALL rule is the same as the web app's).
 - Watchlist as card tiles (ticker, EWMA and article count as labeled sub-cells) with swipe-to-remove; tapping a card opens that ticker's detail screen.
 - Ticker detail screen: sentiment stats, dual price/sentiment mini-charts, risk metrics, prediction card with feature values, and a relevance-filtered news feed that refreshes every 30 seconds.
 - Home-screen widget (`NewsEdgeWidget`) showing 7-day EWMA sentiment for watchlisted tickers, refreshing independently of the app (computed from Yahoo news directly).
 
-## Backendless web mode (production)
+## Recency-weighted sentiment (iOS app and web)
 
-The deployed web app (https://news-edge-ai.vercel.app) runs without the FastAPI backend, like the iOS app: it is built with `VITE_BACKENDLESS=1` (set in the Vercel project) and every `api.get/post` call is answered in the browser (`frontend/src/lib/local/`).
-
-```bash
-cd frontend && npm install
-VITE_BACKENDLESS=1 npm run dev      # http://localhost:5173, no Docker needed
-npm test                            # analytics + data-layer tests (vitest)
-```
-
-- **Data:** Yahoo Finance (bars + news), Nasdaq historical quotes as the price fallback, and Google News RSS for a first-open history backfill. Browsers can't call these directly (no CORS headers), so they go through one tiny allow-listed proxy, `api/proxy.mjs`: a Vercel Function in production and a Vite middleware in `npm run dev`. It forwards only five fixed targets and validates every parameter, but it is still a (stateless) serverless function, so "no backend" means no always-on server, database or Redis.
-- **Math:** `analytics.js` ports the backend's relevance, dedup, risk metrics, RSI/Bollinger features and the RISE/STABLE/FALL rule; tests use values produced by the Python code. Sentiment aggregation is deliberately *not* a straight port, see "Recency-weighted sentiment" below.
-- **Sentiment:** VADER (`vader-sentiment`, the backend's default engine). FinBERT does not run in the browser here, and VADER is noticeably cruder on headlines than the FinBERT the iOS app uses.
-- **Storage:** articles accrue in `localStorage` (up to 90 days) and the last good bars are cached, so history starts at the first visit.
-- **Without the flag** the app still talks to the legacy backend at `VITE_API_BASE` (default `http://localhost:8000`). Production no longer sets `VITE_API_BASE`, and the Railway deployment is retired.
-
-## Recency-weighted sentiment (iOS app and backendless web)
-
-The backend's "EWMA" decays by 0.3 per *article*, so it only ever reflects the latest dozen headlines: changing the window barely moved it, and its prediction rule used the 1-day value whatever the horizon. The iOS app and backendless web mode instead use a recency-weighted mean where an article's weight halves every `window / 3` days:
+The original backend's "EWMA" decayed by 0.3 per *article*, so it only ever reflects the latest dozen headlines: changing the window barely moved it, and its prediction rule used the 1-day value whatever the horizon. The iOS app and the web app use a recency-weighted mean where an article's weight halves every `window / 3` days:
 
 - The **EWMA stat** uses the selected window (1/7/30/90 days), so the window now changes it.
 - The **recommendation** uses sentiment over the selected horizon (1/5/14 days, half-life `horizon / 3`) with the same RISE > +0.15 / FALL < -0.15 thresholds, so the horizon buttons can give different answers. Averaging many headlines pulls values toward zero, so STABLE is the common outcome; the thresholds may deserve recalibrating.
-- The legacy backend is unchanged and keeps the old behavior.
 
-## News quality: events and indirect relevance (iOS app and backendless web)
+## News quality: events and indirect relevance (iOS app and web)
 
 Two problems with counting headlines one by one, and what the clients do about them:
 
@@ -108,85 +67,14 @@ The existing relevance selector decides which channels count (0.35 keeps direct,
 - *Storyline detection is a heuristic.* It works on shared words, so unrelated stories sharing a surname can be damped together (an "Alice Huang" smuggling probe sits in the Jensen Huang storyline), a word that bursts twice in a month is under-damped (the second burst counts as the first one's baseline), and templated headlines ("... Shares Down 1.9% - Here's Why") can form a storyline of their own.
 - *Sentiment is about the text, not the impact.* "Sign" only flips or keeps the headline's polarity. Price-direction news ("oil prices surge") is not captured, and the profiles are a curated starter set (names go stale; sector terms are deliberately conservative). Review before relying on them.
 - *Lexical grouping misses paraphrases and storylines.* The same event described in different words, or twenty different pieces about one story (a CEO exit, say), stay separate events. Sentence embeddings, or damping repeated entities within a story, would address that.
-- The legacy backend is unchanged. Edit `data/news_profiles.json`, then run `python3 scripts/sync_news_profiles.py` (`--check` verifies the three copies match).
-
-## Main Endpoints
-
-- `GET /health`
-- `GET /api/news/{ticker}?days=&limit=&min_relevance=`
-- `GET /api/news/{ticker}/sentiment?days=&min_relevance=`
-- `GET /api/news/{ticker}/trend?hours=&min_relevance=`
-- `POST /api/news/subscribe/{ticker}?backfill_days=&backfill_limit=`
-- `GET /api/news/subscriptions`
-- `POST /api/news/mock/{ticker}` (dev helper)
-- `GET /api/price/{ticker}/bars?limit=`
-- `GET /api/price/{ticker}/features`
-- `GET /api/price/{ticker}/risk?benchmark=SPY&days=365`
-- `POST /api/predict/{ticker}` (async)
-- `GET /api/predict/job/{job_id}`
-- `POST /api/predict/{ticker}/sync`
-- `GET /api/predict/result/{prediction_id}`
-- `GET /api/predict/{ticker}/history`
-- `WS /ws/news/{ticker}`
-
-## Local Run
-
-1. Create env:
-
-```bash
-cp .env.example .env
-```
-
-2. Start stack:
-
-```bash
-docker compose up --build
-```
-
-3. Open:
-- API docs: `http://localhost:8000/docs`
-- Frontend: `http://localhost:5173`
-
-4. Run Alembic migrations (first run or after schema changes):
-
-```bash
-docker compose exec api alembic upgrade head
-```
-
-## Typical Workflow
-
-1. Open ticker page in frontend — search by symbol or company name.
-2. App calls subscribe endpoint with backfill window.
-3. Historical news is fetched, scored with FinBERT, and persisted.
-4. Live WebSocket continues incremental updates.
-5. Dashboard updates sentiment trend, price & sentiment overlay, relevance-filtered feed, risk metrics.
-6. Run a prediction with the desired horizon to get a `RISE` / `STABLE` / `FALL` price-direction signal (not a trading recommendation) with SHAP explanations.
-
-## Training
-
-Manually trigger a retrain:
-
-```bash
-docker compose exec worker celery call newsedge.retrain_models
-```
-
-Or run the training script directly:
-
-```bash
-python -m app.scripts.train_model
-```
-
-The Celery Beat scheduler retrains automatically every Monday at 03:00 UTC and refreshes price labels daily at 01:00 UTC.
+- Edit `data/news_profiles.json`, then run `python3 scripts/sync_news_profiles.py` (`--check` verifies the three copies match).
 
 ## Tests
 
 ```bash
-pytest -q
+cd frontend && npm test                     # web
+xcodebuild test -project ios/NewsEdge/NewsEdge.xcodeproj -scheme NewsEdge \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro'   # iOS (any installed simulator works)
 ```
 
-Tests run against an in-memory SQLite database (via `StaticPool`) so they are fully isolated from the local dev database and always reflect the latest schema.
-
-## Notes
-
-- FinBERT requires `torch`. Without it, the engine silently falls back to VADER. Ensure `torch` is installed in the Docker image (`docker compose up --build` after any `requirements.txt` change).
-- Price labels must be populated before the XGBoost model can use stored targets. Run `newsedge.refresh_price_labels` or wait for the daily Beat task on first deploy.
+The math tests use values produced by the original Python backend on the same synthetic inputs.
