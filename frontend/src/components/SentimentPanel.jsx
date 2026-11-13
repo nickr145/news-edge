@@ -32,7 +32,7 @@ export default function SentimentPanel({ summary, trend }) {
           <span className="metric-value">{summary?.std_compound?.toFixed?.(3) ?? '0.000'}</span>
         </div>
         <div className="metric-cell">
-          <span className="metric-label">Articles</span>
+          <span className="metric-label" title="Distinct events: the same story from several outlets counts once">Stories</span>
           <span className="metric-value">{summary?.count ?? 0}</span>
         </div>
       </div>

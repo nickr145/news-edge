@@ -15,14 +15,17 @@ actor NewsStore {
     private let score: @Sendable (String) -> Double
     private let companyName: @Sendable (String) -> String?
     private let scorerID: @Sendable () -> String
+    private let indirect: Bool
+    private var indirectDone = Set<String>() // tickers whose leadership/supply/sector/macro searches already ran this session
 
     init(
         directory: URL? = nil,
         yahoo: YahooClient = .shared,
         google: GoogleNewsClient = GoogleNewsClient(),
         score: @escaping @Sendable (String) -> Double = { Analytics.sentiment($0) },
-        companyName: @escaping @Sendable (String) -> String? = { t in TickerCatalog.all.first { $0.symbol == t.uppercased() }?.name },
-        scorerID: @escaping @Sendable () -> String = { FinBERTScorer.shared != nil ? "finbert" : "nltagger" }
+        companyName: @escaping @Sendable (String) -> String? = { TickerCatalog.name(for: $0) },
+        scorerID: @escaping @Sendable () -> String = { FinBERTScorer.shared != nil ? "finbert" : "nltagger" },
+        indirect: Bool = true
     ) {
         self.directory = directory
             ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -33,6 +36,7 @@ actor NewsStore {
         self.score = score
         self.companyName = companyName
         self.scorerID = scorerID
+        self.indirect = indirect
     }
 
     /// Fetches fresh news, merges it into the cache, and returns everything cached
@@ -46,6 +50,18 @@ actor NewsStore {
         do { fresh += try await yahoo.news(ticker: ticker) } catch { failure = error }
         if cached.isEmpty { // first sight of this ticker: backfill history Yahoo can't give
             fresh += (try? await google.news(ticker: ticker, companyName: companyName(ticker))) ?? []
+        }
+        if indirect, indirectDone.insert(Analytics.yahooSymbol(ticker)).inserted {
+            // News that bears on the ticker without naming it; kept only if the profile recognises how.
+            let profile = NewsEvents.profile(for: ticker, companyName: companyName(ticker))
+            let google = google
+            let found = await withTaskGroup(of: [Article].self) { group in
+                for q in NewsEvents.indirectQueries(profile) { group.addTask { (try? await google.search(query: q)) ?? [] } }
+                var all: [Article] = []
+                for await items in group { all += items }
+                return all
+            }
+            fresh += found.filter { NewsEvents.exposure(profile: profile, headline: $0.headline, symbols: $0.symbols ?? []) != nil }
         }
         if let failure, byID.isEmpty, fresh.isEmpty { throw failure }
 

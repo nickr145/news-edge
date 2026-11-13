@@ -2,6 +2,7 @@
 // answered on the device (see ios/NewsEdge/NewsEdge/Networking/APIClient.swift for the same design).
 import { TICKERS } from '../../data/tickers'
 import * as A from './analytics'
+import * as N from './news'
 import { createSources } from './sources'
 
 const RETENTION_MS = 90 * 86_400_000
@@ -36,6 +37,13 @@ export function createLocalApi({
       let fresh = [], failure
       try { fresh = await src.yahooNews(ticker) } catch (e) { failure = e }
       if (!cached.length) fresh = fresh.concat(await src.googleNews(ticker, companyName(ticker), { now: now() }))
+      const sym = A.yahooSymbol(ticker)
+      if (!indirectDone.has(sym)) {
+        indirectDone.add(sym)
+        const profile = profileOf(ticker)
+        const found = (await Promise.all(N.indirectQueries(profile).map((q) => src.googleSearch(q).catch(() => [])))).flat()
+        fresh = fresh.concat(found.filter((a) => N.exposureOf(profile, a.headline, a.symbols || [])))
+      }
       if (failure && !byId.size && !fresh.length) throw failure
       for (const a of fresh) {
         const id = hashId(a.url)
@@ -53,45 +61,58 @@ export function createLocalApi({
     return next
   }
 
-  /** Window + headline dedup (newest kept) + relevance filter. Newest first. */
-  async function relevant(ticker, sinceMs, minRelevance) {
-    const seen = new Set(), out = []
+  const indirectDone = new Set() // tickers whose leadership/supply/sector/macro searches already ran this session
+
+  /** Cached news + (once per session) the indirect searches, whose results are kept only if they bear on the ticker. */
+  const profileOf = (t) => N.profileFor(t, companyName(t))
+
+  /**
+   * Window + relevance (direct or indirect) + event grouping. Every aggregate below works on events, so a story
+   * echoed by many outlets is one vote with a bounded coverage boost, and indirect channels carry their sign/weight.
+   */
+  async function eventsFor(ticker, sinceMs, minRelevance) {
+    const profile = profileOf(ticker)
+    const items = []
     for (const a of await articles(ticker)) {
-      const key = A.dedupKey(a.headline)
-      if (Date.parse(a.published_at) < sinceMs || seen.has(key)) continue
-      seen.add(key) // (Set#add returns the Set, so it can't double as a "was new" test)
-      const rel = A.relevance(ticker, a.headline, a.symbols || [])
-      if (rel < minRelevance) continue
-      out.push({ ...a, relevance_score: Math.round(rel * 1e4) / 1e4 })
+      const tMs = Date.parse(a.published_at)
+      if (tMs < sinceMs) continue
+      const exposure = N.exposureOf(profile, a.headline, a.symbols || [])
+      if (!exposure || exposure.relevance < minRelevance) continue
+      items.push({ article: a, exposure, tMs, value: a.compound * (a.source_weight ?? 1) * exposure.sign })
     }
-    return out
+    return N.groupEvents(items, N.ignoreTokens(profile))
   }
 
-  const weighted = (items) => items.map((a) => a.compound * (a.source_weight ?? 1))
   const daysAgo = (d) => now().getTime() - d * DAY_MS
-  /** Recency-weighted sentiment of `items` for a window/horizon of `days` (half-life = days / 3). */
-  const signalOf = (items, days) => A.decayedMean(
-    items.map((a) => ({ value: a.compound * (a.source_weight ?? 1), ageDays: (now().getTime() - Date.parse(a.published_at)) / DAY_MS })),
-    days / 3)
+  const round4 = (x) => Math.round(x * 1e4) / 1e4
+  /** Recency-weighted sentiment of events for a window/horizon of `days` (half-life = days / 3). */
+  const signalOf = (events, days) => A.decayedMean(
+    events.map((e) => ({ value: e.value, weight: e.weight, ageDays: (now().getTime() - e.tMs) / DAY_MS })), days / 3)
 
   const routes = [
     ['GET', /^\/api\/news\/([^/]+)$/, async ([t], p) =>
-      (await relevant(t, daysAgo(p.days ?? 30), p.min_relevance ?? 0.35)).slice(0, p.limit ?? 100)],
+      (await eventsFor(t, daysAgo(p.days ?? 30), p.min_relevance ?? 0.35)).slice(0, p.limit ?? 100)
+        .map((e) => ({ ...e.rep, relevance_score: round4(e.relevance), channel: e.channel, event_size: e.size, event_outlets: e.outlets }))],
     ['GET', /^\/api\/news\/([^/]+)\/sentiment$/, async ([t], p) => {
-      const items = await relevant(t, daysAgo(p.days ?? 7), p.min_relevance ?? 0.35)
-      const w = weighted(items)
+      const events = await eventsFor(t, daysAgo(p.days ?? 7), p.min_relevance ?? 0.35)
+      const values = events.map((e) => e.value), weights = events.map((e) => e.weight)
       const labels = { POSITIVE: 0, NEUTRAL: 0, NEGATIVE: 0 }
-      items.forEach((a) => { labels[a.sentiment_label] += 1 })
-      return { ticker: t.toUpperCase(), count: items.length, mean_compound: A.mean(w), std_compound: A.std(w), ewma_compound: signalOf(items, p.days ?? 7), label_distribution: labels }
+      events.forEach((e) => { labels[A.label(e.value)] += 1 })
+      return {
+        ticker: t.toUpperCase(), count: events.length, article_count: events.reduce((a, e) => a + e.size, 0),
+        mean_compound: A.weightedMean(values, weights), std_compound: A.weightedStd(values, weights),
+        ewma_compound: signalOf(events, p.days ?? 7), label_distribution: labels
+      }
     }],
     ['GET', /^\/api\/news\/([^/]+)\/trend$/, async ([t], p) => {
-      const items = await relevant(t, daysAgo((p.hours ?? 72) / 24), p.min_relevance ?? 0.35)
+      const events = await eventsFor(t, daysAgo((p.hours ?? 72) / 24), p.min_relevance ?? 0.35)
       const buckets = new Map()
-      for (const a of items) {
-        const day = a.published_at.slice(0, 10)
-        buckets.set(day, [...(buckets.get(day) || []), a.compound * (a.source_weight ?? 1)])
+      for (const e of events) {
+        const day = new Date(e.tMs).toISOString().slice(0, 10)
+        buckets.set(day, [...(buckets.get(day) || []), e])
       }
-      return { ticker: t.toUpperCase(), points: [...buckets.keys()].sort().map((d) => ({ bucket: `${d}T00:00:00`, mean_compound: A.mean(buckets.get(d)), article_count: buckets.get(d).length })) }
+      return { ticker: t.toUpperCase(), points: [...buckets.keys()].sort().map((d) => ({
+        bucket: `${d}T00:00:00`, mean_compound: A.weightedMean(buckets.get(d).map((e) => e.value), buckets.get(d).map((e) => e.weight)), article_count: buckets.get(d).length })) }
     }],
     ['GET', /^\/api\/price\/([^/]+)\/bars$/, async ([t], p) => (await src.bars(t)).slice(-(p.limit ?? 100))],
     ['GET', /^\/api\/price\/([^/]+)\/risk$/, async ([t], p) => {
@@ -102,11 +123,10 @@ export function createLocalApi({
     ['POST', /^\/api\/predict\/([^/]+)\/sync$/, async ([t], _p, body) => {
       const horizon = body?.horizon_days ?? 5
       const [bars, one, seven, inHorizon, all] = await Promise.all([
-        src.bars(t), relevant(t, daysAgo(1), 0.35), relevant(t, daysAgo(7), 0.35), relevant(t, daysAgo(horizon), 0.35), articles(t)])
-      const week = all.filter((a) => Date.parse(a.published_at) >= daysAgo(7)).map((a) => a.compound)
+        src.bars(t), eventsFor(t, daysAgo(1), 0.35), eventsFor(t, daysAgo(7), 0.35), eventsFor(t, daysAgo(horizon), 0.35), articles(t)])
       return A.predict({
         ticker: t, horizonDays: horizon, signal: signalOf(inHorizon, horizon),
-        ewma1d: signalOf(one, 1), ewma7d: signalOf(seven, 7), sentimentVolatility: A.std(week),
+        ewma1d: signalOf(one, 1), ewma7d: signalOf(seven, 7), sentimentVolatility: A.weightedStd(seven.map((e) => e.value), seven.map((e) => e.weight)),
         articleVolume24h: all.filter((a) => Date.parse(a.published_at) >= daysAgo(1)).length,
         price: A.priceFeatures(bars), now: now()
       })

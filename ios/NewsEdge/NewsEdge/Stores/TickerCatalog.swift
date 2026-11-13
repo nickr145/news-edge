@@ -20,6 +20,10 @@ enum TickerCatalog {
         return tickers
     }()
 
+    static func name(for symbol: String) -> String? {
+        all.first { $0.symbol == symbol.uppercased() }?.name
+    }
+
     /// Mirrors the ranking/filtering in frontend/src/components/TickerSearch.jsx.
     static func search(_ query: String, limit: Int = 8) -> [TickerInfo] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()

@@ -1,15 +1,22 @@
 // Allow-listed pass-through for the browser: Yahoo/Nasdaq/Google News don't send CORS headers.
 // Runs as a Vercel Function in production and via a Vite middleware in `npm run dev`
-// (see frontend/vite.config.js). Only the four fixed targets below are reachable (no open proxy),
+// (see frontend/vite.config.js). Only the five fixed targets below are reachable (no open proxy),
 // and every parameter is validated before it is placed in an upstream URL.
+// (gsearch takes a free-text query, restricted to a conservative character set and length.)
 const UA = 'Mozilla/5.0'
 const SYMBOL = /^[A-Za-z0-9.\-^=]{1,12}$/
 const DAY = /^\d{4}-\d{2}-\d{2}$/
 
+const QUERY = /^[\w\s"'().&,:\-–]{1,300}$/ // Google News search syntax: words, quotes, OR, parentheses, when:7d
+
 function upstream(target, q) {
   const symbol = q.symbol
-  if (!SYMBOL.test(symbol || '')) throw new Error('bad symbol')
+  if (target !== 'gsearch' && !SYMBOL.test(symbol || '')) throw new Error('bad symbol')
   switch (target) {
+    case 'gsearch': {
+      if (typeof q.q !== 'string' || !QUERY.test(q.q)) throw new Error('bad query')
+      return `https://news.google.com/rss/search?q=${encodeURIComponent(q.q)}&hl=en-US&gl=US&ceid=US:en`
+    }
     case 'chart':
       return `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1y&interval=1d`
     case 'search':

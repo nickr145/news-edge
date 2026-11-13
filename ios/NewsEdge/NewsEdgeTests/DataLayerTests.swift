@@ -186,7 +186,7 @@ struct DataLayerTests {
         StubProtocol.route(yahooSearch, body: searchJSON([NewsItem(title: "AAPL good one", time: now)]))
         StubProtocol.fail(googleRSS)
         let store = NewsStore(directory: tempDir(), yahoo: yahoo(), google: GoogleNewsClient(session: StubProtocol.session),
-                              score: log.score, companyName: { _ in "Apple Inc." })
+                              score: log.score, companyName: { _ in "Apple Inc." }, indirect: false)
 
         let first = try await store.articles(ticker: "AAPL")
         #expect(first.count == 1 && first[0].compound == 0.8 && first[0].sentimentLabel == "POSITIVE")
@@ -197,7 +197,7 @@ struct DataLayerTests {
             NewsItem(title: "AAPL good one", time: now), NewsItem(title: "AAPL bad two", time: now.addingTimeInterval(60)),
         ]))
         let second = try await NewsStore(directory: store.directoryForTests, yahoo: yahoo(), google: GoogleNewsClient(session: StubProtocol.session),
-                                         score: log.score, companyName: { _ in nil }).articles(ticker: "AAPL")
+                                         score: log.score, companyName: { _ in nil }, indirect: false).articles(ticker: "AAPL")
         #expect(second.map(\.headline) == ["AAPL bad two", "AAPL good one"]) // newest first
         #expect(log.count == 2)
     }
@@ -210,7 +210,7 @@ struct DataLayerTests {
         StubProtocol.route(googleRSS, body: "<rss><channel></channel></rss>")
         let dir = tempDir()
         func makeStore() -> NewsStore {
-            NewsStore(directory: dir, yahoo: yahoo(), google: GoogleNewsClient(session: StubProtocol.session), score: log.score, companyName: { _ in nil })
+            NewsStore(directory: dir, yahoo: yahoo(), google: GoogleNewsClient(session: StubProtocol.session), score: log.score, companyName: { _ in nil }, indirect: false)
         }
         let result = try await makeStore().articles(ticker: "AAPL")
         #expect(result.map(\.headline) == ["AAPL good fresh"])  // >90 days is pruned
@@ -224,7 +224,7 @@ struct DataLayerTests {
         StubProtocol.route(yahooSearch, body: #"{"news":[]}"#)
         StubProtocol.route(googleRSS, body: rss.replacingOccurrences(of: "2026", with: String(Calendar.current.component(.year, from: Date()))))
         func makeStore(_ y: YahooClient) -> NewsStore {
-            NewsStore(directory: dir, yahoo: y, google: GoogleNewsClient(session: StubProtocol.session), score: log.score, companyName: { _ in "Apple Inc." })
+            NewsStore(directory: dir, yahoo: y, google: GoogleNewsClient(session: StubProtocol.session), score: log.score, companyName: { _ in "Apple Inc." }, indirect: false)
         }
         let filled = try await makeStore(yahoo()).articles(ticker: "AAPL")
         #expect(filled.count == 3)
@@ -236,7 +236,7 @@ struct DataLayerTests {
         StubProtocol.fail(googleRSS)
         await #expect(throws: APIError.self) {
             try await NewsStore(directory: tempDir(), yahoo: yahoo(), google: GoogleNewsClient(session: StubProtocol.session),
-                                score: log.score, companyName: { _ in nil }).articles(ticker: "AAPL")
+                                score: log.score, companyName: { _ in nil }, indirect: false).articles(ticker: "AAPL")
         }
     }
 
@@ -256,29 +256,34 @@ struct DataLayerTests {
         StubProtocol.fail(googleRSS)
         let log = ScoreLog()
         let store = NewsStore(directory: tempDir(), yahoo: yahoo(), google: GoogleNewsClient(session: StubProtocol.session),
-                              score: log.score, companyName: { _ in nil })
+                              score: log.score, companyName: { _ in nil }, indirect: false)
         let api = APIClient(yahoo: yahoo(), store: store, now: { now })
 
         let week = try await api.articles(ticker: "AAPL", days: 7)
         #expect(week.map(\.headline) == ["AAPL good earnings", "Apple bad news - Reuters"]) // dup + low relevance dropped
-        #expect(week[0].relevanceScore == 0.85 && week[1].relevanceScore == 0.45)
+        #expect(week[0].relevanceScore == 0.85 && week[1].relevanceScore == 0.85) // 'Apple' is recognised as the company
+        #expect(week[1].eventSize == 2 && week[1].eventOutlets == 2)               // Reuters + Bloomberg: one event, two outlets
         #expect(try await api.articles(ticker: "AAPL", days: 30).count == 3)               // adds the 10-day-old one
         #expect(try await api.articles(ticker: "AAPL", days: 7, minRelevance: 0.2).count == 3) // roundup passes at 0.2
         #expect(try await api.articles(ticker: "AAPL", days: 7, limit: 1).count == 1)
 
-        // Weighted: good 0.8x1.0, bad -0.6x1.25 = -0.75. The EWMA is recency-weighted with half-life 7/3 days;
-        // the bad one is 1h older, so its weight is r = 0.5^((1/24)/(7/3)) of the good one's (independent of `now`).
+        // Two events: 'good earnings' (value 0.8, weight 1) and the Reuters+Bloomberg story (value -0.75, weight
+        // B = 1 + 0.5*ln 2 for two outlets). The EWMA is recency-weighted with half-life 7/3 days; the story's first
+        // report (Bloomberg) is 2h older than 'good earnings', so its recency weight is r = 0.5^((2/24)/(7/3)) of its
+        // weight (independent of `now`).
         let summary = try await api.sentimentSummary(ticker: "AAPL", days: 7)
         #expect(summary.count == 2)
         #expect(summary.labelDistribution == ["POSITIVE": 1, "NEUTRAL": 0, "NEGATIVE": 1])
-        #expect(abs(summary.meanCompound - 0.025) < 1e-9)
-        let r = pow(0.5, (1.0 / 24.0) / (7.0 / 3.0))
-        #expect(abs(summary.ewmaCompound - (0.8 - 0.75 * r) / (1 + r)) < 1e-9)
+        let boost = 1 + 0.5 * Foundation.log(2.0)
+        #expect(summary.articleCount == 3)
+        #expect(abs(summary.meanCompound - (0.8 - 0.75 * boost) / (1 + boost)) < 1e-9)
+        let r = pow(0.5, (2.0 / 24.0) / (7.0 / 3.0))
+        #expect(abs(summary.ewmaCompound - (0.8 - 0.75 * boost * r) / (1 + boost * r)) < 1e-9)
 
         let trend = try await api.sentimentTrend(ticker: "AAPL", hours: 24 * 30)
         #expect(trend.points.map(\.articleCount) == [1, 2])   // the old day, then yesterday
         #expect(trend.points.last?.bucket == utc.startOfDay(for: base))
-        #expect(abs((trend.points.last?.meanCompound ?? 0) - 0.025) < 1e-9)
+        #expect(abs((trend.points.last?.meanCompound ?? 0) - (0.8 - 0.75 * boost) / (1 + boost)) < 1e-9)
     }
 
     // MARK: the window and the horizon actually matter
@@ -287,16 +292,17 @@ struct DataLayerTests {
     private func moodClient(now: Date) -> APIClient {
         StubProtocol.route(yahooSearch, body: searchJSON([
             NewsItem(title: "AAPL bad flash", time: now.addingTimeInterval(-3600)),
-            NewsItem(title: "AAPL good A", time: now.addingTimeInterval(-4 * 86_400)),
-            NewsItem(title: "AAPL good B", time: now.addingTimeInterval(-4 * 86_400)),
-            NewsItem(title: "AAPL good C", time: now.addingTimeInterval(-4 * 86_400)),
+            // three different stories (identical headlines would, correctly, be one event)
+            NewsItem(title: "AAPL good record iphone sales", time: now.addingTimeInterval(-4 * 86_400)),
+            NewsItem(title: "AAPL good services revenue growth", time: now.addingTimeInterval(-4 * 86_400)),
+            NewsItem(title: "AAPL good big buyback announced", time: now.addingTimeInterval(-4 * 86_400)),
         ]))
         StubProtocol.fail(googleRSS)
         let closes = (0..<40).map { String(100 + $0) }.joined(separator: ",")
         let stamps = (0..<40).map { String(1_767_225_600 + $0 * 86_400) }.joined(separator: ",")
         StubProtocol.route(yahooChart, body: #"{"chart":{"result":[{"timestamp":[\#(stamps)],"indicators":{"quote":[{"open":[\#(closes)],"high":[\#(closes)],"low":[\#(closes)],"close":[\#(closes)],"volume":[\#((0..<40).map { _ in "1" }.joined(separator: ","))]}]}}]}}"#)
         let store = NewsStore(directory: tempDir(), yahoo: yahoo(), google: GoogleNewsClient(session: StubProtocol.session),
-                              score: ScoreLog().score, companyName: { _ in nil })
+                              score: ScoreLog().score, companyName: { _ in nil }, indirect: false)
         return APIClient(yahoo: yahoo(), store: store, now: { now })
     }
 
@@ -321,13 +327,65 @@ struct DataLayerTests {
         #expect(abs(seven - five) > 0.001)
     }
 
+    // MARK: indirect news: leadership / supply chain / sector found by search
+
+    private func rssItem(_ title: String, _ source: String, _ date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX"); f.timeZone = TimeZone(identifier: "GMT"); f.dateFormat = "EEE, dd MMM yyyy HH:mm:ss 'GMT'"
+        return "<item><title>\(title) - \(source)</title><link>https://g.test/\(title.replacingOccurrences(of: " ", with: "-"))</link><pubDate>\(f.string(from: date))</pubDate><source url=\"x\">\(source)</source></item>"
+    }
+
+    private func indirectClient(now: Date) -> (APIClient, ScoreLog) {
+        let log = ScoreLog()
+        StubProtocol.route(yahooSearch, body: searchJSON([NewsItem(title: "Nvidia posts record data center revenue", time: now.addingTimeInterval(-3600), tickers: ["NVDA"])]))
+        // The same feed answers the first-sight backfill windows and the four indirect searches.
+        StubProtocol.route(googleRSS, body: "<rss><channel>" + [
+            rssItem("Jensen Huang has been ousted", "WSJ", now.addingTimeInterval(-3600)),
+            rssItem("TSMC warns of capacity shortage", "Reuters", now.addingTimeInterval(-7200)),
+            rssItem("Chip stocks tumble as rates jump", "CNBC", now.addingTimeInterval(-10_800)),
+            rssItem("Local bakery wins award", "Gazette", now.addingTimeInterval(-3600)),
+        ].joined() + "</channel></rss>")
+        let store = NewsStore(directory: tempDir(), yahoo: yahoo(), google: GoogleNewsClient(session: StubProtocol.session),
+                              score: log.score, companyName: { _ in "NVIDIA Corporation" })   // indirect searches on
+        return (APIClient(yahoo: yahoo(), store: store, now: { now }), log)
+    }
+
+    @Test func indirectNewsIsFoundTaggedAndFilteredByRelevance() async throws {
+        let (api, _) = indirectClient(now: Date())
+        let at02 = try await api.articles(ticker: "NVDA", days: 30, minRelevance: 0.2)
+        let byChannel = Dictionary(uniqueKeysWithValues: at02.map { ($0.channel ?? "", $0.headline) })
+        #expect(byChannel["direct"] == "Nvidia posts record data center revenue")
+        #expect(byChannel["people"] == "Jensen Huang has been ousted")
+        #expect(byChannel["supply"] == "TSMC warns of capacity shortage")
+        #expect(byChannel["sector"] == "Chip stocks tumble as rates jump")
+        #expect(!at02.contains { $0.headline.contains("bakery") })
+        func channels(_ min: Double) async throws -> [String] {
+            try await api.articles(ticker: "NVDA", days: 30, minRelevance: min).compactMap(\.channel).sorted()
+        }
+        #expect(try await channels(0.35) == ["direct", "people", "sector", "supply"])   // default: sector (0.40) still in
+        #expect(try await channels(0.5) == ["direct", "people", "supply"])
+        #expect(try await channels(0.7) == ["direct", "people"])
+
+        let summary = try await api.sentimentSummary(ticker: "NVDA", days: 30, minRelevance: 0.5)
+        #expect(summary.count == 3 && summary.articleCount == 3)                        // direct + leadership + supply chain events
+    }
+
+    @Test func indirectSearchesRunOncePerTickerPerSession() async throws {
+        let (api, _) = indirectClient(now: Date())
+        _ = try await api.articles(ticker: "NVDA", days: 30)
+        let first = StubProtocol.hitCount(googleRSS)
+        #expect(first == 8)                                                             // 4 backfill windows + 4 indirect searches
+        _ = try await api.articles(ticker: "NVDA", days: 30)
+        #expect(StubProtocol.hitCount(googleRSS) == first)
+    }
+
     @Test func apiClientRisk() async throws {
         let closes = (0..<40).map { String(100 + $0) }.joined(separator: ",")
         let stamps = (0..<40).map { String(1_767_225_600 + $0 * 86_400) }.joined(separator: ",")
         let json = #"{"chart":{"result":[{"timestamp":[\#(stamps)],"indicators":{"quote":[{"open":[\#(closes)],"high":[\#(closes)],"low":[\#(closes)],"close":[\#(closes)],"volume":[\#((0..<40).map { _ in "1" }.joined(separator: ","))]}]}}]}}"#
         StubProtocol.route(yahooChart, body: json)
         StubProtocol.route("query1.finance.yahoo.com/v8/finance/chart/SPY", body: json)
-        let risk = try await APIClient(yahoo: yahoo(), store: NewsStore(directory: tempDir(), yahoo: yahoo())).riskMetrics(ticker: "AAPL")
+        let risk = try await APIClient(yahoo: yahoo(), store: NewsStore(directory: tempDir(), yahoo: yahoo(), indirect: false)).riskMetrics(ticker: "AAPL")
         #expect(abs(risk.betaToBenchmark - 1) < 1e-9)   // identical series
         #expect(risk.maxDrawdown == 0 && risk.highWaterMark == 139)
     }

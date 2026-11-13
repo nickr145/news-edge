@@ -1,0 +1,2357 @@
+{
+ "version": 1,
+ "note": "Curated starter set, not investment research: review terms before relying on them. 'sign' is how a headline's text sentiment maps onto the ticker (+1 same direction, -1 inverse).",
+ "channels": {
+  "direct": {
+   "relevance": null,
+   "weight": 1.0,
+   "sign": 1,
+   "label": "Direct"
+  },
+  "people": {
+   "relevance": 0.8,
+   "weight": 0.8,
+   "sign": 1,
+   "label": "Leadership"
+  },
+  "supply": {
+   "relevance": 0.5,
+   "weight": 0.5,
+   "sign": 1,
+   "label": "Supply chain"
+  },
+  "sector": {
+   "relevance": 0.4,
+   "weight": 0.4,
+   "sign": 1,
+   "label": "Sector"
+  },
+  "competitor": {
+   "relevance": 0.3,
+   "weight": 0.3,
+   "sign": -1,
+   "label": "Competitor"
+  },
+  "macro": {
+   "relevance": 0.25,
+   "weight": 0.25,
+   "sign": 1,
+   "label": "Macro"
+  }
+ },
+ "sectors": {
+  "semis": {
+   "label": "Semiconductors",
+   "sector_terms": [
+    "chipmaker",
+    "chipmakers",
+    "chip stocks",
+    "semiconductor stocks",
+    "semiconductor industry",
+    "semiconductor sector",
+    "chip sector",
+    "ai chipmaker",
+    "ai chip stocks"
+   ],
+   "supply_terms": [
+    "tsmc",
+    "asml",
+    "foundry",
+    "wafer",
+    "hbm",
+    "euv",
+    "advanced packaging"
+   ],
+   "macro_terms": [
+    "export controls",
+    "chip ban",
+    "chip export",
+    "chips act",
+    "tariff",
+    "taiwan",
+    "rare earth"
+   ],
+   "inverse_terms": []
+  },
+  "software": {
+   "label": "Software & cloud",
+   "sector_terms": [
+    "software stocks",
+    "saas",
+    "cloud software",
+    "cloud computing",
+    "enterprise software",
+    "generative ai",
+    "ai spending"
+   ],
+   "supply_terms": [
+    "aws",
+    "azure",
+    "google cloud",
+    "data center",
+    "datacenter"
+   ],
+   "macro_terms": [
+    "tariff",
+    "interest rates",
+    "ai regulation",
+    "data privacy"
+   ],
+   "inverse_terms": []
+  },
+  "cyber": {
+   "label": "Cybersecurity",
+   "sector_terms": [
+    "cybersecurity",
+    "security software"
+   ],
+   "supply_terms": [
+    "microsoft",
+    "aws",
+    "azure"
+   ],
+   "macro_terms": [
+    "data breach",
+    "cyberattack",
+    "ransomware",
+    "global outage"
+   ],
+   "inverse_terms": []
+  },
+  "internet": {
+   "label": "Internet & platforms",
+   "sector_terms": [
+    "big tech",
+    "digital advertising",
+    "ad market",
+    "social media",
+    "tech giants",
+    "magnificent seven"
+   ],
+   "supply_terms": [
+    "ad spending",
+    "advertisers",
+    "cloud capex"
+   ],
+   "macro_terms": [
+    "antitrust",
+    "privacy",
+    "tariff",
+    "section 230",
+    "dma",
+    "digital services tax"
+   ],
+   "inverse_terms": []
+  },
+  "hardware": {
+   "label": "Consumer hardware",
+   "sector_terms": [
+    "smartphone",
+    "smartphones",
+    "pc market",
+    "consumer electronics",
+    "wearables",
+    "big tech"
+   ],
+   "supply_terms": [
+    "foxconn",
+    "tsmc",
+    "tariff",
+    "supply chain",
+    "app store"
+   ],
+   "macro_terms": [
+    "tariff",
+    "antitrust",
+    "export controls",
+    "china"
+   ],
+   "inverse_terms": []
+  },
+  "fintech": {
+   "label": "Payments & fintech",
+   "sector_terms": [
+    "payments",
+    "fintech",
+    "card spending",
+    "interchange",
+    "digital payments"
+   ],
+   "supply_terms": [
+    "merchants",
+    "consumer spending"
+   ],
+   "macro_terms": [
+    "interchange fee",
+    "cfpb",
+    "consumer spending",
+    "crypto regulation",
+    "stablecoin"
+   ],
+   "inverse_terms": []
+  },
+  "crypto": {
+   "label": "Crypto-linked",
+   "sector_terms": [
+    "crypto",
+    "bitcoin",
+    "cryptocurrency",
+    "digital assets",
+    "ether",
+    "stablecoin"
+   ],
+   "supply_terms": [
+    "miners",
+    "etf inflows"
+   ],
+   "macro_terms": [
+    "sec crypto",
+    "crypto regulation",
+    "crypto ban",
+    "stablecoin bill"
+   ],
+   "inverse_terms": []
+  },
+  "banks": {
+   "label": "Banks",
+   "sector_terms": [
+    "bank stocks",
+    "banks",
+    "bank earnings",
+    "regional banks",
+    "banking",
+    "lenders"
+   ],
+   "supply_terms": [
+    "deposits",
+    "loan growth"
+   ],
+   "macro_terms": [
+    "fed",
+    "interest rates",
+    "rate cut",
+    "rate hike",
+    "fdic",
+    "credit losses",
+    "loan losses",
+    "stress test",
+    "basel"
+   ],
+   "inverse_terms": []
+  },
+  "capmkts": {
+   "label": "Capital markets & asset managers",
+   "sector_terms": [
+    "asset managers",
+    "wall street",
+    "ipo market",
+    "private credit",
+    "capital markets",
+    "private equity",
+    "exchanges"
+   ],
+   "supply_terms": [
+    "dealmaking",
+    "fund flows"
+   ],
+   "macro_terms": [
+    "fed",
+    "interest rates",
+    "market volatility",
+    "sec rules"
+   ],
+   "inverse_terms": []
+  },
+  "pharma": {
+   "label": "Pharma & biotech",
+   "sector_terms": [
+    "biotech",
+    "pharma",
+    "drugmakers",
+    "drug makers",
+    "pharmaceutical",
+    "clinical trial",
+    "fda approval",
+    "drug pricing"
+   ],
+   "supply_terms": [
+    "fda",
+    "phase 3",
+    "clinical data"
+   ],
+   "macro_terms": [
+    "fda",
+    "drug pricing",
+    "medicare negotiation",
+    "most favored nation",
+    "tariffs on pharmaceuticals",
+    "ira"
+   ],
+   "inverse_terms": []
+  },
+  "health": {
+   "label": "Medtech & health services",
+   "sector_terms": [
+    "medical devices",
+    "medtech",
+    "health insurers",
+    "managed care",
+    "hospitals",
+    "medicare advantage"
+   ],
+   "supply_terms": [
+    "cms",
+    "medical costs",
+    "utilization"
+   ],
+   "macro_terms": [
+    "medicare",
+    "medicaid",
+    "cms",
+    "medical costs",
+    "health policy",
+    "fda"
+   ],
+   "inverse_terms": []
+  },
+  "retail": {
+   "label": "Retail & e-commerce",
+   "sector_terms": [
+    "retailers",
+    "retail sales",
+    "consumer spending",
+    "holiday shopping",
+    "e-commerce",
+    "big box"
+   ],
+   "supply_terms": [
+    "shipping",
+    "freight",
+    "supply chain",
+    "imports"
+   ],
+   "macro_terms": [
+    "tariff",
+    "consumer confidence",
+    "retail sales",
+    "inflation"
+   ],
+   "inverse_terms": []
+  },
+  "staples": {
+   "label": "Consumer staples",
+   "sector_terms": [
+    "consumer staples",
+    "packaged food",
+    "grocery",
+    "food makers",
+    "beverage"
+   ],
+   "supply_terms": [
+    "commodity costs",
+    "crop",
+    "cocoa",
+    "sugar",
+    "aluminum",
+    "packaging"
+   ],
+   "macro_terms": [
+    "inflation",
+    "tariff",
+    "snap benefits",
+    "food prices"
+   ],
+   "inverse_terms": []
+  },
+  "restaurants": {
+   "label": "Restaurants & leisure",
+   "sector_terms": [
+    "restaurant stocks",
+    "fast food",
+    "restaurant traffic",
+    "casino",
+    "gaming revenue",
+    "consumer discretionary"
+   ],
+   "supply_terms": [
+    "beef prices",
+    "food costs",
+    "commodity costs"
+   ],
+   "macro_terms": [
+    "inflation",
+    "minimum wage",
+    "consumer spending",
+    "tariff"
+   ],
+   "inverse_terms": []
+  },
+  "travel": {
+   "label": "Travel & hospitality",
+   "sector_terms": [
+    "airlines",
+    "airline stocks",
+    "cruise",
+    "cruise lines",
+    "travel demand",
+    "hotel",
+    "hotels"
+   ],
+   "supply_terms": [
+    "boeing delivery",
+    "aircraft deliveries",
+    "engine",
+    "pilots"
+   ],
+   "macro_terms": [
+    "strike",
+    "faa",
+    "tsa",
+    "outage",
+    "grounded",
+    "travel ban",
+    "air traffic control"
+   ],
+   "inverse_terms": [
+    "oil prices",
+    "fuel prices",
+    "jet fuel",
+    "crude oil"
+   ]
+  },
+  "energy": {
+   "label": "Oil & gas",
+   "sector_terms": [
+    "oil stocks",
+    "oil and gas",
+    "crude",
+    "refiners",
+    "oil producers",
+    "energy stocks",
+    "natural gas"
+   ],
+   "supply_terms": [
+    "opec",
+    "refinery",
+    "pipeline",
+    "shale",
+    "lng"
+   ],
+   "macro_terms": [
+    "opec",
+    "sanctions",
+    "hurricane",
+    "refinery outage",
+    "drilling permits"
+   ],
+   "inverse_terms": []
+  },
+  "industrials": {
+   "label": "Industrials & transport",
+   "sector_terms": [
+    "industrial stocks",
+    "freight",
+    "railroads",
+    "shipping",
+    "manufacturing",
+    "factory activity"
+   ],
+   "supply_terms": [
+    "supply chain",
+    "port",
+    "rail",
+    "steel"
+   ],
+   "macro_terms": [
+    "tariff",
+    "pmi",
+    "port strike",
+    "rail strike",
+    "freight volumes",
+    "trade war"
+   ],
+   "inverse_terms": []
+  },
+  "defense": {
+   "label": "Aerospace & defense",
+   "sector_terms": [
+    "defense stocks",
+    "aerospace",
+    "defense spending",
+    "pentagon",
+    "aircraft makers"
+   ],
+   "supply_terms": [
+    "titanium",
+    "engines",
+    "faa",
+    "supply chain"
+   ],
+   "macro_terms": [
+    "defense budget",
+    "ndaa",
+    "government shutdown",
+    "tariff",
+    "ceasefire"
+   ],
+   "inverse_terms": []
+  },
+  "media": {
+   "label": "Media & telecom",
+   "sector_terms": [
+    "streaming",
+    "cable",
+    "wireless",
+    "telecom",
+    "media stocks",
+    "box office",
+    "broadband"
+   ],
+   "supply_terms": [
+    "spectrum",
+    "content costs",
+    "subscribers"
+   ],
+   "macro_terms": [
+    "fcc",
+    "spectrum",
+    "cord cutting",
+    "writers strike",
+    "net neutrality"
+   ],
+   "inverse_terms": []
+  },
+  "reits": {
+   "label": "Real estate",
+   "sector_terms": [
+    "reit",
+    "reits",
+    "real estate",
+    "commercial real estate",
+    "cell tower",
+    "data center demand"
+   ],
+   "supply_terms": [
+    "occupancy",
+    "tenants"
+   ],
+   "macro_terms": [
+    "interest rates",
+    "fed",
+    "cap rates",
+    "office vacancy",
+    "mortgage rates"
+   ],
+   "inverse_terms": []
+  },
+  "autos": {
+   "label": "Autos & EV",
+   "sector_terms": [
+    "automakers",
+    "auto stocks",
+    "ev sales",
+    "electric vehicle sales",
+    "car sales",
+    "auto industry"
+   ],
+   "supply_terms": [
+    "lithium",
+    "battery",
+    "chip shortage",
+    "uaw",
+    "recall",
+    "dealers"
+   ],
+   "macro_terms": [
+    "auto tariffs",
+    "tariffs on autos",
+    "steel tariffs",
+    "ev tax credit",
+    "uaw strike",
+    "emissions rules",
+    "fuel economy standards"
+   ],
+   "inverse_terms": []
+  },
+  "utilities": {
+   "label": "Utilities",
+   "sector_terms": [
+    "utilities",
+    "power demand",
+    "electricity",
+    "power grid",
+    "utility stocks"
+   ],
+   "supply_terms": [
+    "nuclear",
+    "natural gas",
+    "grid"
+   ],
+   "macro_terms": [
+    "fed",
+    "interest rates",
+    "ferc",
+    "heatwave",
+    "wildfire",
+    "blackout"
+   ],
+   "inverse_terms": []
+  },
+  "materials": {
+   "label": "Materials & mining",
+   "sector_terms": [
+    "miners",
+    "mining stocks",
+    "gold price",
+    "copper",
+    "metals",
+    "industrial gases",
+    "aluminum"
+   ],
+   "supply_terms": [
+    "mine",
+    "smelter",
+    "energy costs"
+   ],
+   "macro_terms": [
+    "tariff",
+    "china demand",
+    "strike",
+    "mine collapse",
+    "sanctions"
+   ],
+   "inverse_terms": []
+  },
+  "china": {
+   "label": "China ADRs",
+   "sector_terms": [
+    "china stocks",
+    "chinese stocks",
+    "china economy",
+    "chinese regulators",
+    "chinese tech"
+   ],
+   "supply_terms": [
+    "alibaba",
+    "tencent"
+   ],
+   "macro_terms": [
+    "us-china",
+    "china tariffs",
+    "delisting",
+    "stimulus",
+    "pboc",
+    "trade truce"
+   ],
+   "inverse_terms": []
+  },
+  "etf_broad": {
+   "label": "Broad market ETFs",
+   "sector_terms": [
+    "s&p 500",
+    "nasdaq",
+    "dow jones",
+    "wall street",
+    "stock market",
+    "stocks rally",
+    "stocks fall"
+   ],
+   "supply_terms": [
+    "earnings season"
+   ],
+   "macro_terms": [
+    "fed",
+    "rate cut",
+    "rate hike",
+    "inflation",
+    "jobs report",
+    "cpi",
+    "recession",
+    "tariff"
+   ],
+   "inverse_terms": []
+  },
+  "etf_gold": {
+   "label": "Precious metals",
+   "sector_terms": [
+    "gold",
+    "silver",
+    "precious metals",
+    "safe haven"
+   ],
+   "supply_terms": [
+    "central bank buying",
+    "etf flows"
+   ],
+   "macro_terms": [
+    "fed",
+    "dollar",
+    "inflation",
+    "rate cut",
+    "real yields"
+   ],
+   "inverse_terms": []
+  },
+  "etf_bonds": {
+   "label": "Treasuries",
+   "sector_terms": [
+    "treasury",
+    "treasuries",
+    "bond market",
+    "yields",
+    "bond yields"
+   ],
+   "supply_terms": [
+    "auction",
+    "deficit"
+   ],
+   "macro_terms": [
+    "fed",
+    "inflation",
+    "rate cut",
+    "rate hike",
+    "debt ceiling",
+    "cpi"
+   ],
+   "inverse_terms": []
+  }
+ },
+ "tickers": {
+  "AAPL": {
+   "sector": "hardware",
+   "aliases": [
+    "apple",
+    "iphone",
+    "ipad",
+    "apple watch",
+    "app store"
+   ],
+   "people": [
+    "tim cook"
+   ],
+   "supply": [
+    "foxconn",
+    "tsmc",
+    "qualcomm",
+    "broadcom",
+    "india production"
+   ],
+   "competitors": [
+    "samsung",
+    "google pixel",
+    "huawei"
+   ]
+  },
+  "MSFT": {
+   "sector": "software",
+   "aliases": [
+    "microsoft",
+    "azure",
+    "copilot",
+    "windows",
+    "xbox"
+   ],
+   "people": [
+    "satya nadella",
+    "nadella"
+   ],
+   "supply": [
+    "openai",
+    "nvidia",
+    "github"
+   ],
+   "competitors": [
+    "google cloud",
+    "aws",
+    "oracle cloud"
+   ]
+  },
+  "NVDA": {
+   "sector": "semis",
+   "aliases": [
+    "nvidia"
+   ],
+   "people": [
+    "jensen huang",
+    "huang"
+   ],
+   "supply": [
+    "tsmc",
+    "sk hynix",
+    "hbm",
+    "hyperscaler",
+    "hyperscalers",
+    "cuda",
+    "stargate"
+   ],
+   "competitors": [
+    "amd",
+    "intel",
+    "broadcom",
+    "huawei ascend"
+   ]
+  },
+  "AMZN": {
+   "sector": "retail",
+   "aliases": [
+    "amazon",
+    "aws",
+    "prime video",
+    "whole foods"
+   ],
+   "people": [
+    "andy jassy",
+    "jassy",
+    "jeff bezos",
+    "bezos"
+   ],
+   "supply": [
+    "anthropic",
+    "nvidia",
+    "trainium",
+    "teamsters",
+    "prime day"
+   ],
+   "competitors": [
+    "walmart",
+    "microsoft azure",
+    "temu",
+    "shein"
+   ]
+  },
+  "GOOGL": {
+   "sector": "internet",
+   "aliases": [
+    "alphabet",
+    "google",
+    "youtube",
+    "waymo",
+    "gemini"
+   ],
+   "people": [
+    "sundar pichai"
+   ],
+   "supply": [
+    "tpu",
+    "chrome",
+    "android"
+   ],
+   "competitors": [
+    "openai",
+    "microsoft bing",
+    "meta",
+    "tiktok"
+   ]
+  },
+  "GOOG": {
+   "sector": "internet",
+   "aliases": [
+    "alphabet",
+    "google",
+    "youtube",
+    "waymo",
+    "gemini"
+   ],
+   "people": [
+    "sundar pichai",
+    "pichai"
+   ],
+   "supply": [
+    "tpu",
+    "chrome",
+    "android"
+   ],
+   "competitors": [
+    "openai",
+    "microsoft bing",
+    "meta",
+    "tiktok"
+   ]
+  },
+  "META": {
+   "sector": "internet",
+   "aliases": [
+    "meta platforms",
+    "facebook",
+    "instagram",
+    "whatsapp",
+    "threads"
+   ],
+   "people": [
+    "mark zuckerberg",
+    "zuckerberg"
+   ],
+   "supply": [
+    "llama",
+    "nvidia",
+    "reality labs",
+    "ad spending"
+   ],
+   "competitors": [
+    "tiktok",
+    "snap",
+    "google",
+    "openai"
+   ]
+  },
+  "TSLA": {
+   "sector": "autos",
+   "aliases": [
+    "tesla",
+    "cybertruck",
+    "robotaxi",
+    "optimus"
+   ],
+   "people": [
+    "elon musk",
+    "musk"
+   ],
+   "supply": [
+    "catl",
+    "lithium",
+    "panasonic",
+    "gigafactory",
+    "giga texas",
+    "giga shanghai"
+   ],
+   "competitors": [
+    "byd",
+    "waymo",
+    "rivian",
+    "ford",
+    "gm"
+   ]
+  },
+  "AVGO": {
+   "sector": "semis",
+   "aliases": [
+    "broadcom"
+   ],
+   "people": [
+    "hock tan"
+   ],
+   "supply": [
+    "tsmc",
+    "vmware",
+    "openai",
+    "google tpu"
+   ],
+   "competitors": [
+    "nvidia",
+    "marvell"
+   ]
+  },
+  "ORCL": {
+   "sector": "software",
+   "aliases": [
+    "oracle"
+   ],
+   "people": [
+    "larry ellison",
+    "ellison",
+    "safra catz"
+   ],
+   "supply": [
+    "openai",
+    "stargate",
+    "nvidia",
+    "oci"
+   ],
+   "competitors": [
+    "aws",
+    "microsoft azure",
+    "google cloud",
+    "sap"
+   ]
+  },
+  "ADBE": {
+   "sector": "software",
+   "aliases": [
+    "adobe"
+   ],
+   "supply": [
+    "firefly",
+    "figma"
+   ],
+   "competitors": [
+    "canva",
+    "openai",
+    "midjourney"
+   ]
+  },
+  "CRM": {
+   "sector": "software",
+   "aliases": [
+    "salesforce"
+   ],
+   "people": [
+    "marc benioff",
+    "benioff"
+   ],
+   "supply": [
+    "agentforce",
+    "slack",
+    "informatica"
+   ],
+   "competitors": [
+    "microsoft",
+    "servicenow",
+    "workday"
+   ]
+  },
+  "AMD": {
+   "sector": "semis",
+   "aliases": [
+    "advanced micro devices"
+   ],
+   "people": [
+    "lisa su"
+   ],
+   "supply": [
+    "tsmc",
+    "openai"
+   ],
+   "competitors": [
+    "nvidia",
+    "intel"
+   ]
+  },
+  "INTC": {
+   "sector": "semis",
+   "aliases": [
+    "intel"
+   ],
+   "people": [
+    "lip-bu tan"
+   ],
+   "supply": [
+    "intel foundry",
+    "18a"
+   ],
+   "competitors": [
+    "tsmc",
+    "amd",
+    "nvidia"
+   ]
+  },
+  "QCOM": {
+   "sector": "semis",
+   "aliases": [
+    "qualcomm"
+   ],
+   "people": [
+    "cristiano amon"
+   ],
+   "supply": [
+    "tsmc",
+    "apple modem",
+    "snapdragon"
+   ],
+   "competitors": [
+    "apple",
+    "mediatek"
+   ]
+  },
+  "TXN": {
+   "sector": "semis"
+  },
+  "AMAT": {
+   "sector": "semis",
+   "aliases": [
+    "applied materials"
+   ],
+   "supply": [
+    "tsmc",
+    "foundry capex",
+    "china sales"
+   ],
+   "competitors": [
+    "lam research",
+    "asml"
+   ]
+  },
+  "MU": {
+   "sector": "semis",
+   "aliases": [
+    "micron"
+   ],
+   "supply": [
+    "hbm",
+    "dram",
+    "nand"
+   ],
+   "competitors": [
+    "sk hynix",
+    "samsung"
+   ]
+  },
+  "LRCX": {
+   "sector": "semis",
+   "aliases": [
+    "lam research"
+   ],
+   "supply": [
+    "tsmc",
+    "memory capex"
+   ],
+   "competitors": [
+    "applied materials",
+    "tokyo electron"
+   ]
+  },
+  "KLAC": {
+   "sector": "semis",
+   "aliases": [
+    "kla corp",
+    "kla"
+   ],
+   "supply": [
+    "tsmc",
+    "foundry capex"
+   ],
+   "competitors": [
+    "applied materials"
+   ]
+  },
+  "MRVL": {
+   "sector": "semis"
+  },
+  "NOW": {
+   "sector": "software"
+  },
+  "SNOW": {
+   "sector": "software"
+  },
+  "PLTR": {
+   "sector": "software",
+   "aliases": [
+    "palantir"
+   ],
+   "people": [
+    "alex karp",
+    "karp"
+   ],
+   "supply": [
+    "pentagon",
+    "army contract",
+    "nato",
+    "maven"
+   ],
+   "competitors": [
+    "anduril",
+    "snowflake"
+   ]
+  },
+  "NET": {
+   "sector": "software"
+  },
+  "DDOG": {
+   "sector": "software"
+  },
+  "CRWD": {
+   "sector": "cyber"
+  },
+  "PANW": {
+   "sector": "cyber"
+  },
+  "ZS": {
+   "sector": "cyber"
+  },
+  "FTNT": {
+   "sector": "cyber"
+  },
+  "OKTA": {
+   "sector": "cyber"
+  },
+  "TEAM": {
+   "sector": "software"
+  },
+  "SHOP": {
+   "sector": "software"
+  },
+  "UBER": {
+   "sector": "internet",
+   "aliases": [
+    "uber"
+   ],
+   "supply": [
+    "waymo",
+    "robotaxi",
+    "drivers",
+    "eats"
+   ],
+   "competitors": [
+    "lyft",
+    "waymo",
+    "tesla robotaxi"
+   ]
+  },
+  "LYFT": {
+   "sector": "internet"
+  },
+  "ABNB": {
+   "sector": "internet",
+   "aliases": [
+    "airbnb"
+   ],
+   "supply": [
+    "short-term rental",
+    "hosts",
+    "world cup"
+   ],
+   "competitors": [
+    "booking.com",
+    "vrbo",
+    "expedia"
+   ]
+  },
+  "DASH": {
+   "sector": "internet"
+  },
+  "COIN": {
+   "sector": "crypto",
+   "aliases": [
+    "coinbase"
+   ],
+   "people": [
+    "brian armstrong"
+   ],
+   "supply": [
+    "circle",
+    "usdc",
+    "bitcoin etf"
+   ],
+   "competitors": [
+    "binance",
+    "kraken",
+    "robinhood"
+   ]
+  },
+  "RBLX": {
+   "sector": "internet"
+  },
+  "U": {
+   "sector": "software"
+  },
+  "PATH": {
+   "sector": "software"
+  },
+  "AI": {
+   "sector": "software"
+  },
+  "SOUN": {
+   "sector": "software"
+  },
+  "SMCI": {
+   "sector": "semis",
+   "aliases": [
+    "super micro",
+    "supermicro"
+   ],
+   "supply": [
+    "nvidia",
+    "liquid cooling"
+   ],
+   "competitors": [
+    "dell",
+    "hpe"
+   ]
+  },
+  "ARM": {
+   "sector": "semis",
+   "aliases": [
+    "arm holdings"
+   ],
+   "people": [
+    "rene haas"
+   ],
+   "supply": [
+    "softbank",
+    "apple",
+    "qualcomm"
+   ],
+   "competitors": [
+    "risc-v"
+   ]
+  },
+  "MSTR": {
+   "sector": "crypto",
+   "aliases": [
+    "strategy",
+    "microstrategy"
+   ],
+   "people": [
+    "michael saylor",
+    "saylor"
+   ],
+   "supply": [
+    "bitcoin treasury",
+    "bitcoin"
+   ],
+   "competitors": []
+  },
+  "BRK.B": {
+   "sector": "banks",
+   "aliases": [
+    "berkshire hathaway",
+    "berkshire"
+   ],
+   "people": [
+    "warren buffett",
+    "buffett",
+    "greg abel"
+   ],
+   "supply": [
+    "geico",
+    "bnsf",
+    "cash pile"
+   ],
+   "competitors": []
+  },
+  "JPM": {
+   "sector": "banks",
+   "aliases": [
+    "jpmorgan",
+    "jp morgan",
+    "chase"
+   ],
+   "people": [
+    "jamie dimon",
+    "dimon"
+   ],
+   "supply": [
+    "net interest income"
+   ],
+   "competitors": [
+    "goldman sachs",
+    "bank of america"
+   ]
+  },
+  "V": {
+   "sector": "fintech",
+   "aliases": [
+    "visa"
+   ],
+   "supply": [
+    "cross-border",
+    "interchange"
+   ],
+   "competitors": [
+    "mastercard",
+    "paypal",
+    "stripe"
+   ]
+  },
+  "MA": {
+   "sector": "fintech",
+   "aliases": [
+    "mastercard"
+   ],
+   "supply": [
+    "cross-border",
+    "interchange"
+   ],
+   "competitors": [
+    "visa",
+    "paypal",
+    "stripe"
+   ]
+  },
+  "BAC": {
+   "sector": "banks",
+   "aliases": [
+    "bank of america",
+    "bofa"
+   ],
+   "people": [
+    "brian moynihan"
+   ],
+   "supply": [
+    "net interest income"
+   ],
+   "competitors": [
+    "jpmorgan",
+    "wells fargo",
+    "citigroup"
+   ]
+  },
+  "WFC": {
+   "sector": "banks"
+  },
+  "GS": {
+   "sector": "capmkts",
+   "aliases": [
+    "goldman sachs",
+    "goldman"
+   ],
+   "people": [
+    "david solomon"
+   ],
+   "supply": [
+    "m&a",
+    "dealmaking",
+    "trading revenue"
+   ],
+   "competitors": [
+    "morgan stanley",
+    "jpmorgan"
+   ]
+  },
+  "MS": {
+   "sector": "capmkts"
+  },
+  "AXP": {
+   "sector": "fintech"
+  },
+  "BLK": {
+   "sector": "capmkts"
+  },
+  "SCHW": {
+   "sector": "capmkts"
+  },
+  "C": {
+   "sector": "banks"
+  },
+  "USB": {
+   "sector": "banks"
+  },
+  "PNC": {
+   "sector": "banks"
+  },
+  "COF": {
+   "sector": "fintech"
+  },
+  "PYPL": {
+   "sector": "fintech"
+  },
+  "SQ": {
+   "sector": "fintech"
+  },
+  "HOOD": {
+   "sector": "crypto"
+  },
+  "ICE": {
+   "sector": "capmkts"
+  },
+  "CME": {
+   "sector": "capmkts"
+  },
+  "SPGI": {
+   "sector": "capmkts"
+  },
+  "MCO": {
+   "sector": "capmkts"
+  },
+  "LLY": {
+   "sector": "pharma",
+   "aliases": [
+    "eli lilly",
+    "lilly",
+    "zepbound",
+    "mounjaro"
+   ],
+   "people": [
+    "dave ricks"
+   ],
+   "supply": [
+    "glp-1",
+    "orforglipron",
+    "fda"
+   ],
+   "competitors": [
+    "novo nordisk",
+    "pfizer"
+   ]
+  },
+  "UNH": {
+   "sector": "health",
+   "aliases": [
+    "unitedhealth",
+    "unitedhealthcare",
+    "optum"
+   ],
+   "supply": [
+    "medicare advantage",
+    "doj",
+    "cms"
+   ],
+   "competitors": [
+    "cvs",
+    "humana",
+    "cigna"
+   ]
+  },
+  "JNJ": {
+   "sector": "pharma"
+  },
+  "ABBV": {
+   "sector": "pharma"
+  },
+  "MRK": {
+   "sector": "pharma"
+  },
+  "PFE": {
+   "sector": "pharma",
+   "aliases": [
+    "pfizer"
+   ],
+   "people": [
+    "albert bourla"
+   ],
+   "supply": [
+    "fda",
+    "metsera",
+    "vaccine"
+   ],
+   "competitors": [
+    "moderna",
+    "merck",
+    "novo nordisk"
+   ]
+  },
+  "TMO": {
+   "sector": "pharma"
+  },
+  "ABT": {
+   "sector": "health"
+  },
+  "DHR": {
+   "sector": "pharma"
+  },
+  "BMY": {
+   "sector": "pharma"
+  },
+  "AMGN": {
+   "sector": "pharma"
+  },
+  "GILD": {
+   "sector": "pharma"
+  },
+  "BIIB": {
+   "sector": "pharma"
+  },
+  "REGN": {
+   "sector": "pharma"
+  },
+  "MRNA": {
+   "sector": "pharma",
+   "aliases": [
+    "moderna"
+   ],
+   "supply": [
+    "vaccine",
+    "mrna",
+    "cdc",
+    "fda"
+   ],
+   "competitors": [
+    "pfizer",
+    "biontech",
+    "novavax"
+   ]
+  },
+  "BNTX": {
+   "sector": "pharma"
+  },
+  "ISRG": {
+   "sector": "health",
+   "aliases": [
+    "intuitive surgical",
+    "da vinci"
+   ],
+   "supply": [
+    "procedure growth",
+    "tariff"
+   ],
+   "competitors": [
+    "medtronic",
+    "johnson & johnson"
+   ]
+  },
+  "SYK": {
+   "sector": "health"
+  },
+  "BSX": {
+   "sector": "health"
+  },
+  "MDT": {
+   "sector": "health"
+  },
+  "CVS": {
+   "sector": "health"
+  },
+  "CI": {
+   "sector": "health"
+  },
+  "HUM": {
+   "sector": "health"
+  },
+  "VRTX": {
+   "sector": "pharma"
+  },
+  "DXCM": {
+   "sector": "health"
+  },
+  "WMT": {
+   "sector": "retail",
+   "aliases": [
+    "walmart"
+   ],
+   "people": [
+    "doug mcmillon"
+   ],
+   "supply": [
+    "tariff",
+    "low-income consumers",
+    "snap benefits"
+   ],
+   "competitors": [
+    "amazon",
+    "target",
+    "costco"
+   ]
+  },
+  "COST": {
+   "sector": "retail",
+   "aliases": [
+    "costco"
+   ],
+   "supply": [
+    "membership fee",
+    "tariff"
+   ],
+   "competitors": [
+    "walmart",
+    "amazon",
+    "sam's club"
+   ]
+  },
+  "HD": {
+   "sector": "retail",
+   "aliases": [
+    "home depot"
+   ],
+   "supply": [
+    "housing market",
+    "mortgage rates",
+    "tariff"
+   ],
+   "competitors": [
+    "lowe's",
+    "amazon"
+   ]
+  },
+  "LOW": {
+   "sector": "retail"
+  },
+  "MCD": {
+   "sector": "restaurants",
+   "aliases": [
+    "mcdonald's",
+    "mcdonalds"
+   ],
+   "supply": [
+    "beef",
+    "franchisees",
+    "low-income consumers"
+   ],
+   "competitors": [
+    "burger king",
+    "wendy's",
+    "starbucks"
+   ]
+  },
+  "SBUX": {
+   "sector": "restaurants",
+   "aliases": [
+    "starbucks"
+   ],
+   "people": [
+    "brian niccol"
+   ],
+   "supply": [
+    "coffee prices",
+    "union",
+    "tariff"
+   ],
+   "competitors": [
+    "dunkin",
+    "dutch bros",
+    "luckin"
+   ]
+  },
+  "NKE": {
+   "sector": "restaurants",
+   "aliases": [
+    "nike"
+   ],
+   "people": [
+    "elliott hill"
+   ],
+   "supply": [
+    "vietnam factories",
+    "tariff",
+    "china sales"
+   ],
+   "competitors": [
+    "adidas",
+    "lululemon",
+    "on holding"
+   ]
+  },
+  "TGT": {
+   "sector": "retail"
+  },
+  "BABA": {
+   "sector": "china",
+   "aliases": [
+    "alibaba",
+    "taobao",
+    "tmall"
+   ],
+   "supply": [
+    "qwen",
+    "cloud",
+    "singles day"
+   ],
+   "competitors": [
+    "pdd",
+    "jd.com",
+    "meituan"
+   ]
+  },
+  "PDD": {
+   "sector": "china"
+  },
+  "JD": {
+   "sector": "china"
+  },
+  "MELI": {
+   "sector": "retail"
+  },
+  "ETSY": {
+   "sector": "retail"
+  },
+  "EBAY": {
+   "sector": "retail"
+  },
+  "KO": {
+   "sector": "staples",
+   "aliases": [
+    "coca-cola",
+    "coca cola",
+    "coke"
+   ],
+   "supply": [
+    "sugar",
+    "bottlers"
+   ],
+   "competitors": [
+    "pepsi"
+   ]
+  },
+  "PEP": {
+   "sector": "staples",
+   "aliases": [
+    "pepsico",
+    "pepsi",
+    "frito-lay"
+   ],
+   "supply": [
+    "frito-lay",
+    "bottlers"
+   ],
+   "competitors": [
+    "coca-cola"
+   ]
+  },
+  "PM": {
+   "sector": "staples"
+  },
+  "MO": {
+   "sector": "staples"
+  },
+  "PG": {
+   "sector": "staples"
+  },
+  "CL": {
+   "sector": "staples"
+  },
+  "KHC": {
+   "sector": "staples"
+  },
+  "GIS": {
+   "sector": "staples"
+  },
+  "K": {
+   "sector": "staples"
+  },
+  "CMG": {
+   "sector": "restaurants"
+  },
+  "YUM": {
+   "sector": "restaurants"
+  },
+  "DPZ": {
+   "sector": "restaurants"
+  },
+  "DKNG": {
+   "sector": "restaurants"
+  },
+  "MGM": {
+   "sector": "restaurants"
+  },
+  "LVS": {
+   "sector": "restaurants"
+  },
+  "XOM": {
+   "sector": "energy",
+   "aliases": [
+    "exxon",
+    "exxonmobil",
+    "exxon mobil"
+   ],
+   "supply": [
+    "guyana",
+    "permian",
+    "lng"
+   ],
+   "competitors": [
+    "chevron",
+    "shell",
+    "bp"
+   ]
+  },
+  "CVX": {
+   "sector": "energy",
+   "aliases": [
+    "chevron"
+   ],
+   "supply": [
+    "hess",
+    "permian",
+    "tengiz"
+   ],
+   "competitors": [
+    "exxon",
+    "shell",
+    "bp"
+   ]
+  },
+  "COP": {
+   "sector": "energy"
+  },
+  "EOG": {
+   "sector": "energy"
+  },
+  "SLB": {
+   "sector": "energy"
+  },
+  "PSX": {
+   "sector": "energy"
+  },
+  "VLO": {
+   "sector": "energy"
+  },
+  "MPC": {
+   "sector": "energy"
+  },
+  "OXY": {
+   "sector": "energy"
+  },
+  "HAL": {
+   "sector": "energy"
+  },
+  "CAT": {
+   "sector": "industrials"
+  },
+  "DE": {
+   "sector": "industrials"
+  },
+  "BA": {
+   "sector": "defense",
+   "aliases": [
+    "boeing",
+    "737 max",
+    "787"
+   ],
+   "people": [
+    "kelly ortberg"
+   ],
+   "supply": [
+    "spirit aerosystems",
+    "faa",
+    "machinists strike",
+    "engine deliveries"
+   ],
+   "competitors": [
+    "airbus",
+    "comac"
+   ]
+  },
+  "LMT": {
+   "sector": "defense",
+   "aliases": [
+    "lockheed martin",
+    "lockheed",
+    "f-35"
+   ],
+   "supply": [
+    "pentagon",
+    "f-35",
+    "golden dome"
+   ],
+   "competitors": [
+    "northrop",
+    "boeing",
+    "rtx"
+   ]
+  },
+  "RTX": {
+   "sector": "defense",
+   "aliases": [
+    "rtx",
+    "raytheon",
+    "pratt & whitney"
+   ],
+   "supply": [
+    "pentagon",
+    "engine issues",
+    "gtf"
+   ],
+   "competitors": [
+    "ge aerospace",
+    "lockheed"
+   ]
+  },
+  "NOC": {
+   "sector": "defense"
+  },
+  "GD": {
+   "sector": "defense"
+  },
+  "GE": {
+   "sector": "industrials"
+  },
+  "HON": {
+   "sector": "industrials"
+  },
+  "MMM": {
+   "sector": "industrials"
+  },
+  "UPS": {
+   "sector": "industrials"
+  },
+  "FDX": {
+   "sector": "industrials"
+  },
+  "CSX": {
+   "sector": "industrials"
+  },
+  "UNP": {
+   "sector": "industrials"
+  },
+  "NSC": {
+   "sector": "industrials"
+  },
+  "NFLX": {
+   "sector": "media",
+   "aliases": [
+    "netflix"
+   ],
+   "people": [
+    "ted sarandos",
+    "greg peters"
+   ],
+   "supply": [
+    "content slate",
+    "ad tier",
+    "paramount",
+    "warner"
+   ],
+   "competitors": [
+    "disney+",
+    "hbo max",
+    "youtube",
+    "amazon prime video"
+   ]
+  },
+  "DIS": {
+   "sector": "media",
+   "aliases": [
+    "disney",
+    "espn",
+    "pixar"
+   ],
+   "people": [
+    "bob iger",
+    "josh d'amaro"
+   ],
+   "supply": [
+    "parks",
+    "box office",
+    "espn streaming"
+   ],
+   "competitors": [
+    "netflix",
+    "comcast",
+    "warner bros"
+   ]
+  },
+  "CMCSA": {
+   "sector": "media"
+  },
+  "T": {
+   "sector": "media",
+   "aliases": [
+    "at&t"
+   ],
+   "supply": [
+    "fiber",
+    "spectrum",
+    "lumen"
+   ],
+   "competitors": [
+    "verizon",
+    "t-mobile",
+    "comcast"
+   ]
+  },
+  "VZ": {
+   "sector": "media",
+   "aliases": [
+    "verizon"
+   ],
+   "supply": [
+    "frontier",
+    "fios",
+    "spectrum"
+   ],
+   "competitors": [
+    "at&t",
+    "t-mobile",
+    "comcast"
+   ]
+  },
+  "TMUS": {
+   "sector": "media"
+  },
+  "CHTR": {
+   "sector": "media"
+  },
+  "WBD": {
+   "sector": "media"
+  },
+  "PARA": {
+   "sector": "media"
+  },
+  "SPOT": {
+   "sector": "internet"
+  },
+  "TTD": {
+   "sector": "internet"
+  },
+  "SNAP": {
+   "sector": "internet"
+  },
+  "PINS": {
+   "sector": "internet"
+  },
+  "RDDT": {
+   "sector": "internet"
+  },
+  "X": {
+   "sector": "internet"
+  },
+  "SPG": {
+   "sector": "reits"
+  },
+  "AMT": {
+   "sector": "reits"
+  },
+  "PLD": {
+   "sector": "reits"
+  },
+  "CCI": {
+   "sector": "reits"
+  },
+  "EQIX": {
+   "sector": "reits"
+  },
+  "DLR": {
+   "sector": "reits"
+  },
+  "O": {
+   "sector": "reits"
+  },
+  "F": {
+   "sector": "autos",
+   "aliases": [
+    "ford",
+    "f-150"
+   ],
+   "people": [
+    "jim farley"
+   ],
+   "supply": [
+    "recall",
+    "aluminum",
+    "novelis",
+    "uaw",
+    "tariff"
+   ],
+   "competitors": [
+    "gm",
+    "tesla",
+    "toyota"
+   ]
+  },
+  "GM": {
+   "sector": "autos",
+   "aliases": [
+    "general motors",
+    "chevrolet",
+    "cadillac"
+   ],
+   "people": [
+    "mary barra"
+   ],
+   "supply": [
+    "recall",
+    "uaw",
+    "cruise",
+    "tariff"
+   ],
+   "competitors": [
+    "ford",
+    "tesla",
+    "toyota"
+   ]
+  },
+  "RIVN": {
+   "sector": "autos"
+  },
+  "LCID": {
+   "sector": "autos"
+  },
+  "NIO": {
+   "sector": "china"
+  },
+  "LI": {
+   "sector": "china"
+  },
+  "XPEV": {
+   "sector": "china"
+  },
+  "NEE": {
+   "sector": "utilities"
+  },
+  "DUK": {
+   "sector": "utilities"
+  },
+  "SO": {
+   "sector": "utilities"
+  },
+  "D": {
+   "sector": "utilities"
+  },
+  "LIN": {
+   "sector": "materials"
+  },
+  "APD": {
+   "sector": "materials"
+  },
+  "FCX": {
+   "sector": "materials"
+  },
+  "NEM": {
+   "sector": "materials"
+  },
+  "AA": {
+   "sector": "materials"
+  },
+  "SPY": {
+   "sector": "etf_broad"
+  },
+  "QQQ": {
+   "sector": "etf_broad"
+  },
+  "IWM": {
+   "sector": "etf_broad"
+  },
+  "DIA": {
+   "sector": "etf_broad"
+  },
+  "VTI": {
+   "sector": "etf_broad"
+  },
+  "VOO": {
+   "sector": "etf_broad"
+  },
+  "GLD": {
+   "sector": "etf_gold"
+  },
+  "SLV": {
+   "sector": "materials"
+  },
+  "TLT": {
+   "sector": "etf_bonds"
+  },
+  "XLF": {
+   "sector": "banks"
+  },
+  "XLK": {
+   "sector": "software"
+  },
+  "XLE": {
+   "sector": "energy"
+  },
+  "XLV": {
+   "sector": "pharma"
+  },
+  "ARKK": {
+   "sector": "internet"
+  },
+  "SOXL": {
+   "sector": "semis"
+  },
+  "BN": {
+   "sector": "capmkts"
+  },
+  "BAM": {
+   "sector": "capmkts"
+  },
+  "CNQ": {
+   "sector": "energy"
+  },
+  "TD": {
+   "sector": "banks"
+  },
+  "RY": {
+   "sector": "banks"
+  },
+  "ENB": {
+   "sector": "energy"
+  },
+  "CP": {
+   "sector": "industrials"
+  },
+  "CNR": {
+   "sector": "industrials"
+  },
+  "SU": {
+   "sector": "energy"
+  },
+  "ABX": {
+   "sector": "materials"
+  },
+  "ATD": {
+   "sector": "retail"
+  },
+  "MFC": {
+   "sector": "banks"
+  },
+  "SLF": {
+   "sector": "banks"
+  },
+  "BCE": {
+   "sector": "media"
+  },
+  "TRI": {
+   "sector": "software"
+  },
+  "WCN": {
+   "sector": "industrials"
+  },
+  "OTEX": {
+   "sector": "software"
+  },
+  "LSPD": {
+   "sector": "software"
+  },
+  "DSGX": {
+   "sector": "software"
+  },
+  "BX": {
+   "sector": "capmkts"
+  },
+  "KKR": {
+   "sector": "capmkts"
+  },
+  "APO": {
+   "sector": "capmkts"
+  },
+  "ARES": {
+   "sector": "capmkts"
+  },
+  "HLT": {
+   "sector": "travel"
+  },
+  "MAR": {
+   "sector": "travel"
+  },
+  "H": {
+   "sector": "travel"
+  },
+  "AAL": {
+   "sector": "travel"
+  },
+  "DAL": {
+   "sector": "travel"
+  },
+  "UAL": {
+   "sector": "travel"
+  },
+  "LUV": {
+   "sector": "travel"
+  },
+  "CCL": {
+   "sector": "travel"
+  },
+  "RCL": {
+   "sector": "travel"
+  },
+  "NCLH": {
+   "sector": "travel"
+  },
+  "WDAY": {
+   "sector": "software"
+  },
+  "HUBS": {
+   "sector": "software"
+  },
+  "ZM": {
+   "sector": "software"
+  },
+  "DOCU": {
+   "sector": "software"
+  },
+  "TWLO": {
+   "sector": "software"
+  },
+  "MDB": {
+   "sector": "software"
+  },
+  "GTLB": {
+   "sector": "software"
+  },
+  "RGEN": {
+   "sector": "pharma"
+  },
+  "CELH": {
+   "sector": "staples"
+  },
+  "MNST": {
+   "sector": "staples"
+  },
+  "STZ": {
+   "sector": "staples"
+  },
+  "BUD": {
+   "sector": "staples"
+  },
+  "TAP": {
+   "sector": "staples"
+  }
+ }
+}

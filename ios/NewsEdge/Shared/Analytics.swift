@@ -23,13 +23,30 @@ enum Analytics {
     /// (half-life = horizon / 3). The backend's per-article EWMA (alpha 0.3) only ever reflected
     /// the latest dozen headlines, whatever the window.
     static func decayedMean(_ points: [(value: Double, ageDays: Double)], halfLifeDays: Double) -> Double {
+        decayedMean(points.map { ($0.value, $0.ageDays, 1.0) }, halfLifeDays: halfLifeDays)
+    }
+
+    /// Same, with a per-point weight (e.g. an event's coverage boost and channel weight).
+    static func decayedMean(_ points: [(value: Double, ageDays: Double, weight: Double)], halfLifeDays: Double) -> Double {
         var num = 0.0, den = 0.0
         for p in points {
-            let w = pow(0.5, max(p.ageDays, 0) / halfLifeDays)
+            let w = p.weight * pow(0.5, max(p.ageDays, 0) / halfLifeDays)
             num += w * p.value
             den += w
         }
         return den > 0 ? num / den : 0
+    }
+
+    /// Weighted mean / population std (equal weights give the plain mean).
+    static func weightedMean(_ values: [Double], _ weights: [Double]) -> Double {
+        let den = weights.reduce(0, +)
+        return den > 0 ? zip(values, weights).reduce(0) { $0 + $1.0 * $1.1 } / den : 0
+    }
+
+    static func weightedStd(_ values: [Double], _ weights: [Double]) -> Double {
+        guard values.count >= 2 else { return 0 }
+        let m = weightedMean(values, weights), den = weights.reduce(0, +)
+        return (zip(values, weights).reduce(0) { $0 + $1.1 * ($1.0 - m) * ($1.0 - m) } / den).squareRoot()
     }
 
     // MARK: - Sentiment
@@ -59,11 +76,15 @@ enum Analytics {
             .trimmingCharacters(in: .whitespaces)
     }
 
+    /// Headline with trailing publisher attribution ("- Reuters") stripped.
+    static func stripPublisherSuffix(_ headline: String) -> String {
+        headline.replacingOccurrences(of: "\\s*[-–|]\\s*[A-Za-z][\\w\\s\\.&]{1,40}$", with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+    }
+
     /// Headline with trailing publisher attribution ("- Reuters") stripped, normalized.
     static func dedupKey(_ headline: String) -> String {
-        normalize(headline.replacingOccurrences(
-            of: "\\s*[-–|]\\s*[A-Za-z][\\w\\s\\.&]{1,40}$", with: "", options: .regularExpression
-        ).trimmingCharacters(in: .whitespaces))
+        normalize(stripPublisherSuffix(headline))
     }
 
     private static let sourceWeights = ["reuters": 1.25, "bloomberg": 1.25, "cnbc": 1.1, "benzinga": 0.95]
@@ -77,16 +98,18 @@ enum Analytics {
         ticker.trimmingCharacters(in: .whitespaces).uppercased().replacingOccurrences(of: ".", with: "-")
     }
 
-    static func relevance(ticker: String, headline: String, symbols: [String]) -> Double {
+    /// `aliases`: other names the headline may use for the company ("nvidia"), counted like a mention of the ticker.
+    static func relevance(ticker: String, headline: String, symbols: [String], aliases: [String] = []) -> Double {
         let t = ticker.lowercased()
         let h = headline.lowercased()
         let syms = symbols.map(yahooSymbol)
+        let mentioned = h.contains(t) || aliases.contains { h.contains($0) }
         var score = 0.0
         if syms.contains(yahooSymbol(ticker)) { score += 0.45 }
-        if h.contains(t) { score += 0.35 }
+        if mentioned { score += 0.35 }
         if !syms.isEmpty { score -= min(0.25, 0.04 * Double(max(syms.count - 1, 0))) }
-        if h.contains(t) { score += 0.05 }
-        return max(0, min(1, score))
+        if mentioned { score += 0.05 }
+        return (max(0, min(1, score)) * 10_000).rounded() / 10_000 // 4 d.p.: 0.35 + 0.05 must not come out as 0.3999…
     }
 
     // MARK: - Price math (app/services/price_data.py)

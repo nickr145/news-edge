@@ -26,7 +26,7 @@ struct AnalyticsTests {
         #expect(abs(Analytics.decayedMean([(0.2, 3), (0.6, 3)], halfLifeDays: 5) - 0.4) < 1e-12)      // equal ages: plain mean
         #expect(abs(Analytics.decayedMean([(1, 0), (0, 1)], halfLifeDays: 1) - 1 / 1.5) < 1e-12)       // older value counts half
         #expect(abs(Analytics.decayedMean([(1, -2), (0, 0)], halfLifeDays: 1) - 0.5) < 1e-12)          // future timestamps clamp to age 0
-        #expect(Analytics.decayedMean([], halfLifeDays: 1) == 0)
+        #expect(Analytics.decayedMean([(value: Double, ageDays: Double)](), halfLifeDays: 1) == 0)
         let pts: [(value: Double, ageDays: Double)] = [(-0.6, 0.04), (0.8, 4)]
         #expect(Analytics.decayedMean(pts, halfLifeDays: 10) > Analytics.decayedMean(pts, halfLifeDays: 2)) // longer half-life: old counts more
     }

@@ -98,7 +98,7 @@ struct SentimentPanelView: View {
             statCell("Std Dev", summary?.stdCompound)
             Spacer()
             VStack(alignment: .trailing, spacing: 3) {
-                Text("Articles")
+                Text("Stories")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(Theme.muted)
                 Text("\(summary?.count ?? 0)")
