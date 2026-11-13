@@ -16,3 +16,9 @@ ios/NewsEdge/NewsEdge/Resources/FinBERT.mlpackage/
 
 # Xcode-generated per-machine workspace settings
 ios/**/xcshareddata/WorkspaceSettings.xcsettings
+
+# Web build + dependencies
+frontend/node_modules/
+frontend/dist/
+.DS_Store
+**/.DS_Store
