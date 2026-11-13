@@ -158,3 +158,82 @@ describe('weighted stats', () => {
     expect(A.weightedMean([1, 0], [3, 1])).toBeCloseTo(0.75, 12)
   })
 })
+
+// ---- storylines --------------------------------------------------------------
+describe('storyline damping', () => {
+  const H = 3_600_000, NOW = Date.parse('2026-11-12T12:00:00Z')
+  const ev = (i, hoursAgo, words) => ({ id: i, tMs: NOW - hoursAgo * H, tokens: new Set(words), weight: 1, damp: 1, storyline: null, storyRank: 1 })
+  // 40 ordinary events spread over 20 days, each with its own distinctive words
+  const ordinary = (n = 40) => Array.from({ length: n }, (_, i) => ev(i, 72 + (i * 440) / n, [`topic${i}`, `detail${i}`]))
+  // a developing story: k events in the last 48h that all mention "zorblax" plus varied other words
+  const story = (k, word = 'zorblax') => Array.from({ length: k }, (_, i) => ev(1000 + i, 1 + i * 2, [word, `angle${i}`, `view${i}`]))
+
+  it('damps the k-th event of a bursting term by 1/sqrt(k), first report in full', () => {
+    const out = N.dampStorylines([...ordinary(), ...story(20)])
+    const s = out.filter((e) => e.storyline === 'zorblax').sort((a, b) => a.storyRank - b.storyRank)
+    expect(s).toHaveLength(20)
+    expect(s.map((e) => e.storyRank)).toEqual(Array.from({ length: 20 }, (_, i) => i + 1))   // earliest first
+    expect(s[0].damp).toBe(1)
+    expect(s[3].damp).toBeCloseTo(0.5, 12)                                                    // 4th: 1/sqrt(4)
+    expect(s[15].damp).toBeCloseTo(0.25, 12)                                                  // 16th: 1/4, at the floor
+    expect(s[19].damp).toBe(0.25)                                                             // never below the floor
+    s.forEach((e) => expect(e.weight).toBeCloseTo(e.damp, 12))                                // weight starts at 1
+  })
+
+  it('leaves unrelated events alone', () => {
+    const out = N.dampStorylines([...ordinary(), ...story(20)])
+    out.filter((e) => e.storyline === null).forEach((e) => { expect(e.damp).toBe(1); expect(e.weight).toBe(1) })
+  })
+
+  it('never treats excluded (ordinary / topical) vocabulary as a storyline', () => {
+    const out = N.dampStorylines([...ordinary(), ...story(20)], new Set(['zorblax']))
+    expect(out.every((e) => e.storyline === null && e.damp === 1)).toBe(true)
+  })
+
+  it('needs enough context: fewer than 30 events are returned untouched', () => {
+    const few = story(12)
+    expect(N.dampStorylines(few)).toBe(few)
+  })
+
+  it('steady vocabulary is not a burst when older events provide a baseline', () => {
+    // "regular" is in ~30% of events at a constant rate all month
+    const steady = Array.from({ length: 60 }, (_, i) => ev(i, 6 + i * 11, i % 3 === 0 ? ['regular', `x${i}`] : [`y${i}`, `z${i}`]))
+    expect(N.dampStorylines(steady).every((e) => e.storyline === null)).toBe(true)
+  })
+
+  it('with no baseline (a story fills the whole sample) it needs more events and a higher share', () => {
+    // every event within ~2 days: no events outside the +/-72h window to compare against
+    const base = Array.from({ length: 50 }, (_, i) => ev(i, 1 + i * 0.9, [`t${i}`, `u${i}`]))
+    const small = base.map((e, i) => (i < 5 ? { ...e, tokens: new Set(['minorword', `a${i}`]) } : e))   // 5 events (10%): too few
+    expect(N.dampStorylines(small).every((e) => e.storyline === null)).toBe(true)
+    const big = base.map((e, i) => (i < 12 ? { ...e, tokens: new Set(['majorword', `a${i}`]) } : e))    // 12 events (24%): a story
+    const out = N.dampStorylines(big)
+    expect(out.filter((e) => e.storyline === 'majorword')).toHaveLength(12)
+  })
+
+  it('only events within 72h pile up: a long-running story plateaus instead of ranking forever', () => {
+    // a piece every 6 hours for 6 days (24 events), over plenty of ordinary context
+    const long = Array.from({ length: 24 }, (_, i) => ev(3000 + i, 2 + i * 6, ['zorblax', `a${i}`, `b${i}`]))
+    const out = N.dampStorylines([...ordinary(60), ...long]).filter((e) => e.storyline === 'zorblax')
+    expect(out.length).toBeGreaterThanOrEqual(20)
+    expect(Math.max(...out.map((e) => e.storyRank))).toBeLessThanOrEqual(13)   // 72h / 6h = 12 earlier events + itself
+    expect(Math.max(...out.map((e) => e.storyRank))).toBeGreaterThanOrEqual(10)
+    expect(out.every((e) => e.damp >= 0.25)).toBe(true)
+  })
+
+  it('storylineExclusions: ordinary words and profile vocabulary are out, people stay in, chronic newsmakers go out', () => {
+    const nvda = N.storylineExclusions(N.profileFor('NVDA', 'NVIDIA Corporation'))
+    expect(nvda.has('ai')).toBe(true)                  // ubiquitous headline word
+    expect(nvda.has('tsmc')).toBe(true)                // NVDA's own topical vocabulary
+    expect(nvda.has('huang')).toBe(false)              // a leadership story must stay detectable
+    const tsla = N.storylineExclusions(N.profileFor('TSLA', 'Tesla, Inc.'))
+    expect(tsla.has('musk')).toBe(true)                // chronic: Musk is in nearly every Tesla story
+    expect(tsla.has('spacex')).toBe(false)             // but a Tesla-SpaceX merger story is detectable
+  })
+
+  it('corporate suffixes and exchange tags are not informative tokens', () => {
+    expect([...N.headlineTokens('JPMorgan Chase & Co. (NYSE:JPM) Shares Down 1.9%')]).not.toEqual(expect.arrayContaining(['co']))
+    expect(N.headlineTokens('Acme Corp Inc Ltd NYSE Nasdaq results').has('corp')).toBe(false)
+  })
+})
+

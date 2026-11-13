@@ -289,3 +289,41 @@ describe('indirect news', () => {
     expect(s.article_count).toBe(3)
   })
 })
+
+// ---- storylines through the API ---------------------------------------------
+describe('storylines in the feed', () => {
+  // 40 ordinary AAPL stories over three weeks, plus 14 pieces on one developing story in the last two days
+  const ordinaryItems = Array.from({ length: 40 }, (_, i) => ({ title: `AAPL covers topic${i} detail${i}`, time: new Date(NOW.getTime() - (3 + i * 12) * H), tickers: ['AAPL'] }))
+  const storyItems = Array.from({ length: 14 }, (_, i) => ({ title: `AAPL zorblax angle${i} view${i}`, time: new Date(NOW.getTime() - (1 + i * 3) * H), tickers: ['AAPL'] }))
+  const setup = () => make({ search: { body: search([...ordinaryItems, ...storyItems]) }, gnews: 'down', gsearch: 'down' })
+
+  it('flags the story, ranks it from the first report, and reports the damping', async () => {
+    const { api } = setup()
+    const feed = (await api.get('/api/news/AAPL', { params: { days: 30, limit: 200 } })).data
+    const story = feed.filter((a) => a.storyline === 'zorblax').sort((a, b) => a.story_rank - b.story_rank)
+    expect(story).toHaveLength(14)
+    expect(story[0].story_damp).toBe(1)
+    expect(story[13].story_damp).toBeCloseTo(Math.max(0.25, 1 / Math.sqrt(14)), 3)
+    feed.filter((a) => !a.storyline).forEach((a) => expect(a.story_damp).toBe(1))
+  })
+
+  it('the story counts for less than the same number of unrelated stories', async () => {
+    const { api } = setup()
+    const feedSent = async (items) => (await make({ search: { body: search(items) }, gnews: 'down', gsearch: 'down' }).api.get('/api/news/AAPL/sentiment', { params: { days: 30 } })).data
+    // same 54 articles, but every story headline positive: the pile-on cannot outweigh the 40 ordinary stories
+    const pos = (t) => t.replace('AAPL', 'AAPL good')
+    const damped = await feedSent([...ordinaryItems.map((i) => ({ ...i, title: i.title.replace('AAPL', 'AAPL bad') })), ...storyItems.map((i) => ({ ...i, title: pos(i.title) }))])
+    // 40 negatives (weight 1) vs 14 positives: undamped mean would be (14*0.8 - 40*0.6) / 54 = -0.237; damping the pile-on moves it further negative
+    expect(damped.mean_compound).toBeLessThan(-0.237)
+    expect(damped.count).toBe(54)
+    void api
+  })
+
+  it('a 1-day window still sees the storyline (damping uses 30 days of context)', async () => {
+    const { api } = setup()
+    const day = (await api.get('/api/news/AAPL', { params: { days: 1, limit: 200 } })).data
+    expect(day.length).toBeGreaterThan(5)
+    expect(day.some((a) => a.storyline === 'zorblax' && a.story_rank > 1)).toBe(true)
+  })
+})
+

@@ -870,6 +870,9 @@
   },
   "META": {
    "sector": "internet",
+   "chronic": [
+    "zuckerberg"
+   ],
    "aliases": [
     "meta platforms",
     "facebook",
@@ -896,6 +899,10 @@
   },
   "TSLA": {
    "sector": "autos",
+   "chronic": [
+    "elon",
+    "musk"
+   ],
    "aliases": [
     "tesla",
     "cybertruck",
@@ -1292,6 +1299,9 @@
   },
   "BRK.B": {
    "sector": "banks",
+   "chronic": [
+    "buffett"
+   ],
    "aliases": [
     "berkshire hathaway",
     "berkshire"

@@ -23,9 +23,13 @@ struct Article: Codable, Identifiable, Equatable {
     var channel: String? = nil
     var eventSize: Int? = nil
     var eventOutlets: Int? = nil
+    /// Set when the article belongs to a bursting storyline: its term, its rank in the story, and the weight multiplier.
+    var storyline: String? = nil
+    var storyRank: Int? = nil
+    var storyDamp: Double? = nil
 
     enum CodingKeys: String, CodingKey {
-        case id, url, headline, summary, body, source, compound, symbols, channel
+        case id, url, headline, summary, body, source, compound, symbols, channel, storyline
         case publishedAt = "published_at"
         case sentimentLabel = "sentiment_label"
         case relevanceScore = "relevance_score"
@@ -34,6 +38,8 @@ struct Article: Codable, Identifiable, Equatable {
         case isSecFiling = "is_sec_filing"
         case eventSize = "event_size"
         case eventOutlets = "event_outlets"
+        case storyRank = "story_rank"
+        case storyDamp = "story_damp"
     }
 }
 
