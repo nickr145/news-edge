@@ -1,10 +1,12 @@
 # NewsEdge
 
-Real-time stock news sentiment platform with historical backfill, live streaming ingestion, ticker relevance filtering, ML-powered predictions, risk analytics, and a React web dashboard backed by a FastAPI service, and a standalone native iOS app that needs no backend.
+Stock news sentiment platform: ticker relevance filtering, recency-weighted sentiment, risk analytics and a RISE/STABLE/FALL signal. Both clients, a React web app and a native iOS app, run **without a backend** (the web app is served from Vercel and the iOS app is fully on-device). The FastAPI service under `app/` is the original backend; it is no longer deployed and is kept only as a legacy reference.
 
 **Live:** https://news-edge-ai.vercel.app
 
 ## Features
+
+Sections up to "iOS App" describe the legacy FastAPI backend (`app/`); the clients' current behavior is in "iOS App" and the sections after it.
 
 ### Data + Ingestion
 - Alpaca News WebSocket ingestion for real-time events.
@@ -25,7 +27,7 @@ Real-time stock news sentiment platform with historical backfill, live streaming
 ### ML + Prediction
 - XGBoost model trained on sentiment features + technical indicators (RSI, momentum, Bollinger Band position, volume ratio).
 - SHAP explanations returned with every prediction, showing feature contributions to the signal.
-- Prediction horizon: 1, 5, or 14 days. The Railway backend stores it but its fallback rule ignores it (it always uses the 1-day EWMA); the iOS app and the backendless web mode use it (see below).
+- Prediction horizon: 1, 5, or 14 days. The legacy backend stores it but its fallback rule ignores it (it always uses the 1-day EWMA); the iOS app and the backendless web mode use it (see below).
 - Prediction falls back to a sentiment-threshold rule (`RISE` above +0.15 EWMA, `FALL` below -0.15, else `STABLE`) when no trained model artifact is available or there's insufficient data to train one.
 - 5-day forward return labels (`RISE` / `STABLE` / `FALL` at ±2% threshold) persisted to `price_labels` table via Alpaca bars.
 - Celery Beat schedule:
@@ -54,16 +56,16 @@ Real-time stock news sentiment platform with historical backfill, live streaming
 - Native SwiftUI app (`ios/NewsEdge`) — runs with **no backend**, Apple Stocks-style: prices and news come straight from keyless Yahoo Finance endpoints (`YahooClient`), news is accrued on device for up to 90 days (`NewsStore`), and FinBERT sentiment, relevance, risk metrics and the prediction rule are computed locally (`Services/Analytics.swift`, a port of the backend math with unit tests checked against the Python output). Dark theme ported 1:1 from the web design tokens.
 - Tradeoffs: Yahoo's endpoints are unofficial (daily bars fall back to Nasdaq's historical API, and the last good bars are cached on disk), Yahoo serves only the last day or two of news so the first time a ticker is opened it is backfilled from Google News RSS (sampled across ~4 weeks, so history is sparse and starts at the first open), sentiment is scored on device by FinBERT converted to Core ML (~105 MB, 8-bit weights; generate it with `scripts/convert_finbert_coreml.py` — it is gitignored, and without it the app falls back to Apple's `NLTagger`; the widget always uses `NLTagger`), and there is no trained model (the RISE/STABLE/FALL rule matches the backend's fallback).
 - Watchlist as card tiles (ticker, EWMA and article count as labeled sub-cells) with swipe-to-remove; tapping a card opens that ticker's detail screen.
-- Ticker detail screen: sentiment stats, dual price/sentiment mini-charts, risk metrics, prediction card with SHAP feature bars, and a relevance-filtered news feed that refreshes every 30 seconds.
+- Ticker detail screen: sentiment stats, dual price/sentiment mini-charts, risk metrics, prediction card with feature values, and a relevance-filtered news feed that refreshes every 30 seconds.
 - Home-screen widget (`NewsEdgeWidget`) showing 7-day EWMA sentiment for watchlisted tickers, refreshing independently of the app (computed from Yahoo news directly).
 
-## Backendless web mode (prototype)
+## Backendless web mode (production)
 
-The web app can run without the FastAPI backend, like the iOS app: build or run it with `VITE_BACKENDLESS=1` and every `api.get/post` call is answered in the browser (`frontend/src/lib/local/`).
+The deployed web app (https://news-edge-ai.vercel.app) runs without the FastAPI backend, like the iOS app: it is built with `VITE_BACKENDLESS=1` (set in the Vercel project) and every `api.get/post` call is answered in the browser (`frontend/src/lib/local/`).
 
 ```bash
 cd frontend && npm install
-VITE_BACKENDLESS=1 npm run dev      # http://localhost:5173, no Docker/Railway needed
+VITE_BACKENDLESS=1 npm run dev      # http://localhost:5173, no Docker needed
 npm test                            # analytics + data-layer tests (vitest)
 ```
 
@@ -71,7 +73,7 @@ npm test                            # analytics + data-layer tests (vitest)
 - **Math:** `analytics.js` ports the backend's relevance, dedup, risk metrics, RSI/Bollinger features and the RISE/STABLE/FALL rule; tests use values produced by the Python code. Sentiment aggregation is deliberately *not* a straight port, see "Recency-weighted sentiment" below.
 - **Sentiment:** VADER (`vader-sentiment`, the backend's default engine). FinBERT does not run in the browser here, and VADER is noticeably cruder on headlines than the FinBERT the iOS app uses.
 - **Storage:** articles accrue in `localStorage` (up to 90 days) and the last good bars are cached, so history starts at the first visit.
-- **Without the flag** the app talks to the backend exactly as before, so the Railway backend can only be retired once this mode (or an equivalent) ships.
+- **Without the flag** the app still talks to the legacy backend at `VITE_API_BASE` (default `http://localhost:8000`). Production no longer sets `VITE_API_BASE`, and the Railway deployment is retired.
 
 ## Recency-weighted sentiment (iOS app and backendless web)
 
@@ -79,7 +81,7 @@ The backend's "EWMA" decays by 0.3 per *article*, so it only ever reflects the l
 
 - The **EWMA stat** uses the selected window (1/7/30/90 days), so the window now changes it.
 - The **recommendation** uses sentiment over the selected horizon (1/5/14 days, half-life `horizon / 3`) with the same RISE > +0.15 / FALL < -0.15 thresholds, so the horizon buttons can give different answers. Averaging many headlines pulls values toward zero, so STABLE is the common outcome; the thresholds may deserve recalibrating.
-- The Railway backend is unchanged and keeps the old behavior.
+- The legacy backend is unchanged and keeps the old behavior.
 
 ## News quality: events and indirect relevance (iOS app and backendless web)
 
@@ -106,7 +108,7 @@ The existing relevance selector decides which channels count (0.35 keeps direct,
 - *Storyline detection is a heuristic.* It works on shared words, so unrelated stories sharing a surname can be damped together (an "Alice Huang" smuggling probe sits in the Jensen Huang storyline), a word that bursts twice in a month is under-damped (the second burst counts as the first one's baseline), and templated headlines ("... Shares Down 1.9% - Here's Why") can form a storyline of their own.
 - *Sentiment is about the text, not the impact.* "Sign" only flips or keeps the headline's polarity. Price-direction news ("oil prices surge") is not captured, and the profiles are a curated starter set (names go stale; sector terms are deliberately conservative). Review before relying on them.
 - *Lexical grouping misses paraphrases and storylines.* The same event described in different words, or twenty different pieces about one story (a CEO exit, say), stay separate events. Sentence embeddings, or damping repeated entities within a story, would address that.
-- The Railway backend is unchanged. Edit `data/news_profiles.json`, then run `python3 scripts/sync_news_profiles.py` (`--check` verifies the three copies match).
+- The legacy backend is unchanged. Edit `data/news_profiles.json`, then run `python3 scripts/sync_news_profiles.py` (`--check` verifies the three copies match).
 
 ## Main Endpoints
 
