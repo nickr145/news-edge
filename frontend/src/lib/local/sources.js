@@ -107,7 +107,7 @@ export function createSources({ fetchImpl = (...a) => fetch(...a), proxyBase = '
       if (!title || !link || !date || Number.isNaN(date.getTime())) return []
       if (source && title.endsWith(` - ${source}`)) title = title.slice(0, -(source.length + 3))
       const lower = title.toLowerCase()
-      const mentions = lower.includes(String(ticker).toLowerCase()) || (name && lower.includes(name))
+      const mentions = ticker && (lower.includes(String(ticker).toLowerCase()) || (name && lower.includes(name)))
       return [{ id: link, url: link, headline: title, summary: null, source, published_at: date.toISOString(), symbols: mentions ? [String(ticker).toUpperCase()] : [] }]
     })
     return items.sort((a, b) => b.published_at.localeCompare(a.published_at)).slice(0, limit)
@@ -126,5 +126,10 @@ export function createSources({ fetchImpl = (...a) => fetch(...a), proxyBase = '
     return windows.flat().filter((a) => !seen.has(a.id) && seen.add(a.id))
   }
 
-  return { bars, yahooNews, googleNews, parseNasdaq, parseGoogleRSS }
+  /** Free-text Google News search (used for leadership / supply-chain / sector / macro queries); items are untagged. */
+  async function googleSearch(query, { limit = 10 } = {}) {
+    return parseGoogleRSS(await get('gsearch', { q: query }, 300_000), '', null, limit)
+  }
+
+  return { bars, yahooNews, googleNews, googleSearch, parseNasdaq, parseGoogleRSS }
 }

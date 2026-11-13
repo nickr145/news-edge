@@ -26,6 +26,21 @@ struct GoogleNewsClient: Sendable {
         }
     }
 
+    /// Free-text search (leadership / supply-chain / sector / macro queries); items come back untagged.
+    func search(query: String, limit: Int = 10) async throws -> [Article] {
+        var c = URLComponents(string: "https://news.google.com/rss/search")!
+        c.queryItems = [
+            URLQueryItem(name: "q", value: query),
+            URLQueryItem(name: "hl", value: "en-US"), URLQueryItem(name: "gl", value: "US"), URLQueryItem(name: "ceid", value: "US:en"),
+        ]
+        guard let url = c.url else { throw APIError.invalidURL }
+        var request = URLRequest(url: url)
+        request.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
+        let data: Data
+        do { (data, _) = try await session.data(for: request) } catch { throw APIError.transport(error) }
+        return Self.articles(from: data, ticker: "", companyName: nil, limit: limit)
+    }
+
     private func window(ticker: String, companyName: String?, after: String, before: String, limit: Int) async throws -> [Article] {
         var c = URLComponents(string: "https://news.google.com/rss/search")!
         c.queryItems = [
@@ -62,7 +77,7 @@ struct GoogleNewsClient: Sendable {
                 headline = String(headline.dropLast(source.count + 3))
             }
             let lower = headline.lowercased()
-            let mentions = lower.contains(ticker.lowercased()) || (firstName.map(lower.contains) ?? false)
+            let mentions = !ticker.isEmpty && (lower.contains(ticker.lowercased()) || (firstName.map(lower.contains) ?? false))
             return Article(
                 id: YahooClient.stableID(link), url: link, headline: headline,
                 summary: nil, body: nil, source: item.source, publishedAt: date,

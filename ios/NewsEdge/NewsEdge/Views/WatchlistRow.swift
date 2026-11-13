@@ -17,7 +17,7 @@ struct WatchlistRow: View {
 
             HStack(spacing: 8) {
                 metric("EWMA", ewmaText, color: ewmaColor)
-                metric("Articles", summary.map { "\($0.count)" } ?? "—")
+                metric("Stories", summary.map { "\($0.count)" } ?? "—")
             }
         }
         .card()

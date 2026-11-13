@@ -134,7 +134,8 @@ describe('endpoints', () => {
     const { api } = setup()
     const week = (await api.get('/api/news/AAPL', { params: { days: 7 } })).data
     expect(week.map((a) => a.headline)).toEqual(['AAPL good earnings', 'Apple bad news - Reuters'])
-    expect([week[0].relevance_score, week[1].relevance_score]).toEqual([0.85, 0.45])
+    expect([week[0].relevance_score, week[1].relevance_score]).toEqual([0.85, 0.85]) // 'Apple' is recognised as the company
+    expect(week[1].event_size).toBe(2); expect(week[1].event_outlets).toBe(2)    // Reuters + Bloomberg: one event, two outlets
     expect((await api.get('/api/news/AAPL', { params: { days: 30 } })).data).toHaveLength(3)
     expect((await api.get('/api/news/AAPL', { params: { days: 7, min_relevance: 0.2 } })).data).toHaveLength(3)
     expect((await api.get('/api/news/AAPL', { params: { days: 7, limit: 1 } })).data).toHaveLength(1)
@@ -143,16 +144,20 @@ describe('endpoints', () => {
     const { data: s } = await setup().api.get('/api/news/AAPL/sentiment', { params: { days: 7 } })
     expect(s.count).toBe(2)
     expect(s.label_distribution).toEqual({ POSITIVE: 1, NEUTRAL: 0, NEGATIVE: 1 })
-    expect(s.mean_compound).toBeCloseTo(0.025, 9) // (0.8*1.0 + -0.6*1.25) / 2
-    // recency-weighted: b is 1h older than a; half-life = 7/3 days, so b's weight is r = 0.5^((1/24)/(7/3)) of a's
-    const r = 0.5 ** ((1 / 24) / (7 / 3))
-    expect(s.ewma_compound).toBeCloseTo((0.8 - 0.75 * r) / (1 + r), 9)
+    // two events: 'good earnings' (weight 1) and the Reuters+Bloomberg story (value -0.75, weight 1 + 0.5*ln 2 for two outlets)
+    const B = 1 + 0.5 * Math.log(2)
+    expect(s.mean_compound).toBeCloseTo((0.8 - 0.75 * B) / (1 + B), 9)
+    expect(s.article_count).toBe(3)
+    // recency-weighted: the story's first report (Bloomberg) is 2h older than a; half-life = 7/3 days, so its recency
+    // weight is r = 0.5^((2/24)/(7/3)) of a's, times its coverage boost B
+    const r = 0.5 ** ((2 / 24) / (7 / 3))
+    expect(s.ewma_compound).toBeCloseTo((0.8 - 0.75 * B * r) / (1 + B * r), 9)
   })
   it('trend buckets by UTC day with ISO bucket strings', async () => {
     const { data: t } = await setup().api.get('/api/news/AAPL/trend', { params: { hours: 24 * 30 } })
     expect(t.points.map((p) => p.article_count)).toEqual([1, 2])
     expect(t.points[1].bucket.slice(0, 10)).toBe('2026-11-11')
-    expect(t.points[1].mean_compound).toBeCloseTo(0.025, 9)
+    expect(t.points[1].mean_compound).toBeCloseTo((0.8 - 0.75 * (1 + 0.5 * Math.log(2))) / (1 + (1 + 0.5 * Math.log(2))), 9)
   })
   it('subscribe is a no-op and predict returns the fallback rule', async () => {
     const closes = Array.from({ length: 40 }, (_, i) => 100 + i), stamps = closes.map((_, i) => 1767225600 + i * 86400)
@@ -175,6 +180,19 @@ describe('endpoints', () => {
 
 // ---- the proxy ------------------------------------------------------------
 describe('proxy handler', () => {
+  it('gsearch accepts conservative search syntax only', async () => {
+    const run2 = async (query) => { const res = { headers: {}, setHeader() {}, end(b) { this.body = b } }; await handler({ query }, res); return res }
+    for (const q of ['"nvidia ceo" OR "jensen huang" when:7d', 'tsmc OR asml (chips)']) {
+      vi.stubGlobal('fetch', async (u) => { run2.url = u; return { status: 200, headers: { get: () => 'text/xml' }, arrayBuffer: async () => new TextEncoder().encode('<rss/>').buffer } })
+      expect((await run2({ target: 'gsearch', q })).statusCode).toBe(200)
+      expect(new URL(run2.url).host).toBe('news.google.com')
+      expect(new URL(run2.url).searchParams.get('q')).toBe(q)
+      vi.unstubAllGlobals()
+    }
+    for (const q of ['<script>', 'a;b', 'x'.repeat(301), '', undefined, 'a|b', 'http://evil']) {
+      expect((await run2({ target: 'gsearch', q })).statusCode).toBe(400)
+    }
+  })
   const run = async (query) => {
     const res = { headers: {}, setHeader(k, v) { this.headers[k] = v }, end(b) { this.body = b } }
     await handler({ query }, res)
@@ -204,7 +222,8 @@ describe('recency-weighted sentiment', () => {
   // One fresh negative headline (1h old) and three older positives (4 days old).
   const mood = [
     { title: 'AAPL bad flash', time: new Date(NOW.getTime() - H) },
-    ...['A', 'B', 'C'].map((x) => ({ title: `AAPL good ${x}`, time: new Date(NOW.getTime() - 4 * D) }))
+    // three different stories (identical headlines would, correctly, be one event)
+    ...['record iphone sales', 'services revenue growth', 'big buyback announced'].map((x) => ({ title: `AAPL good ${x}`, time: new Date(NOW.getTime() - 4 * D) }))
   ]
   const closes = Array.from({ length: 40 }, (_, i) => 100 + i), stamps = closes.map((_, i) => 1767225600 + i * 86400)
   const setup = () => make({ search: { body: search(mood) }, gnews: 'down', chart: { body: chart(closes, stamps) } })
@@ -225,5 +244,48 @@ describe('recency-weighted sentiment', () => {
     const ewma = async (days) => (await api.get('/api/news/AAPL/sentiment', { params: { days } })).data.ewma_compound
     expect((await ewma(30)) - (await ewma(7))).toBeGreaterThan(0.05) // longer window, slower decay, older positives matter more
     expect(await ewma(7)).not.toBeCloseTo(await ewma(5), 3)
+  })
+})
+
+// ---- indirect news: leadership / supply chain found by search --------------
+describe('indirect news', () => {
+  const rssItem = (title, source, time) => `<item><title>${title} - ${source}</title><link>https://g.test/${encodeURIComponent(title)}</link><pubDate>${time.toUTCString()}</pubDate><source url="x">${source}</source></item>`
+  const gsearchRSS = `<rss><channel>${[
+    rssItem('Jensen Huang has been ousted', 'WSJ', new Date(NOW.getTime() - H)),
+    rssItem('TSMC warns of capacity shortage', 'Reuters', new Date(NOW.getTime() - 2 * H)),
+    rssItem('Chip stocks tumble as rates jump', 'CNBC', new Date(NOW.getTime() - 3 * H)),
+    rssItem('Local bakery wins award', 'Gazette', new Date(NOW.getTime() - H))
+  ].join('')}</channel></rss>`
+  const setup = () => make({ search: { body: search([{ title: 'Nvidia posts record data center revenue', time: new Date(NOW.getTime() - H), tickers: ['NVDA'] }]) }, gnews: 'down', gsearch: { body: gsearchRSS } },
+    { companyName: () => 'NVIDIA Corporation' })
+
+  it('keeps items that bear on the ticker (tagged by channel) and drops unrelated ones', async () => {
+    const { api, fetchImpl } = setup()
+    const { data } = await api.get('/api/news/NVDA', { params: { days: 30, min_relevance: 0.2 } })
+    const byChannel = Object.fromEntries(data.map((a) => [a.channel, a.headline]))
+    expect(byChannel.direct).toBe('Nvidia posts record data center revenue')
+    expect(byChannel.people).toBe('Jensen Huang has been ousted')
+    expect(byChannel.supply).toBe('TSMC warns of capacity shortage')
+    expect(byChannel.sector).toBe('Chip stocks tumble as rates jump')
+    expect(data.some((a) => /bakery/.test(a.headline))).toBe(false)
+    expect(fetchImpl.hits.gsearch).toBe(4)                                  // people, supply, sector, macro searches
+    await api.get('/api/news/NVDA', { params: { days: 30 } })
+    expect(fetchImpl.hits.gsearch).toBe(4)                                  // once per ticker per session
+  })
+
+  it('the relevance selector controls which channels count', async () => {
+    const { api } = setup()
+    const channels = async (min) => (await api.get('/api/news/NVDA', { params: { days: 30, min_relevance: min } })).data.map((a) => a.channel).sort()
+    expect(await channels(0.2)).toEqual(['direct', 'people', 'sector', 'supply'])
+    expect(await channels(0.35)).toEqual(['direct', 'people', 'sector', 'supply']) // default: sector (0.40) still in
+    expect(await channels(0.5)).toEqual(['direct', 'people', 'supply'])
+    expect(await channels(0.7)).toEqual(['direct', 'people'])
+  })
+
+  it('indirect events count in the sentiment with their lower weight', async () => {
+    const { api } = setup()
+    const { data: s } = await api.get('/api/news/NVDA/sentiment', { params: { days: 30, min_relevance: 0.5 } })
+    expect(s.count).toBe(3)                    // direct + leadership + supply chain events
+    expect(s.article_count).toBe(3)
   })
 })

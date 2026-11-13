@@ -19,12 +19,23 @@ export function std(v) {
  */
 export function decayedMean(points, halfLifeDays) {
   let num = 0, den = 0
-  for (const { value, ageDays } of points) {
-    const w = 0.5 ** (Math.max(ageDays, 0) / halfLifeDays)
+  for (const { value, ageDays, weight = 1 } of points) {
+    const w = weight * 0.5 ** (Math.max(ageDays, 0) / halfLifeDays)
     num += w * value
     den += w
   }
   return den > 0 ? num / den : 0
+}
+
+/** Weighted mean / population std (weights default to 1, so equal weights give the plain mean). */
+export function weightedMean(values, weights = values.map(() => 1)) {
+  const den = weights.reduce((a, b) => a + b, 0)
+  return den > 0 ? values.reduce((a, v, i) => a + v * weights[i], 0) / den : 0
+}
+export function weightedStd(values, weights = values.map(() => 1)) {
+  if (values.length < 2) return 0
+  const m = weightedMean(values, weights), den = weights.reduce((a, b) => a + b, 0)
+  return Math.sqrt(values.reduce((a, v, i) => a + weights[i] * (v - m) ** 2, 0) / den)
 }
 
 export const sentiment = (text) => vader.SentimentIntensityAnalyzer.polarity_scores(text || '').compound
@@ -39,16 +50,18 @@ export const sourceWeight = (source) => SOURCE_WEIGHTS[normalize(source)] ?? 1.0
 /** Yahoo writes share classes with a dash (BRK-B); users and the catalog use BRK.B. */
 export const yahooSymbol = (t) => String(t || '').trim().toUpperCase().replace(/\./g, '-')
 
-export function relevance(ticker, headline, symbols = []) {
+/** `aliases`: other names the headline may use for the company ("nvidia"), counted like a mention of the ticker. */
+export function relevance(ticker, headline, symbols = [], aliases = []) {
   const t = String(ticker).toLowerCase()
   const h = String(headline || '').toLowerCase()
   const syms = symbols.map(yahooSymbol)
+  const mentioned = h.includes(t) || aliases.some((a) => h.includes(a))
   let score = 0
   if (syms.includes(yahooSymbol(ticker))) score += 0.45
-  if (h.includes(t)) score += 0.35
+  if (mentioned) score += 0.35
   if (syms.length) score -= Math.min(0.25, 0.04 * Math.max(syms.length - 1, 0))
-  if (h.includes(t)) score += 0.05
-  return Math.max(0, Math.min(1, score))
+  if (mentioned) score += 0.05
+  return Math.round(Math.max(0, Math.min(1, score)) * 1e4) / 1e4 // 4 d.p.: 0.35 + 0.05 must not come out as 0.3999…
 }
 
 const dayKey = (ts) => Math.floor(Date.parse(ts) / 86_400_000)

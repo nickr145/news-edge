@@ -10,6 +10,9 @@ function relativeTime(dateStr) {
   return `${Math.floor(hrs / 24)}d ago`
 }
 
+// Why a headline counts for this ticker when it doesn't name the company (see lib/local/news.js).
+const CHANNEL_LABELS = { people: 'Leadership', supply: 'Supply chain', sector: 'Sector', competitor: 'Competitor', macro: 'Macro' }
+
 export default function NewsFeed({ articles, loading }) {
   const [collapsed, setCollapsed] = useState(true)
 
@@ -38,6 +41,8 @@ export default function NewsFeed({ articles, loading }) {
               </a>
               <div className="news-meta">
                 <span className="source-chip">{a.source || 'unknown'}</span>
+                {CHANNEL_LABELS[a.channel] && <span className="channel-chip" title="Indirect news: it bears on this ticker without naming it">{CHANNEL_LABELS[a.channel]}</span>}
+                {a.event_outlets > 1 && <span className="outlets-chip" title="Counted once; this story was reported by several outlets">+{a.event_outlets - 1} outlet{a.event_outlets > 2 ? 's' : ''}</span>}
                 {label && <span className={`news-badge ${label}`}>{label}</span>}
                 <span className="rel-score">rel {Number(a.relevance_score || 0).toFixed(2)}</span>
                 <span className="time-text">{relativeTime(a.published_at)}</span>

@@ -662,6 +662,17 @@ body {
   white-space: nowrap;
 }
 
+.channel-chip, .outlets-chip {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0.42rem;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.channel-chip { color: #8fb4ff; background: rgba(143, 180, 255, 0.1); border: 1px solid rgba(143, 180, 255, 0.25); }
+.outlets-chip { color: var(--muted); background: rgba(255,255,255,0.05); font-family: 'JetBrains Mono', monospace; }
+
 .news-badge {
   font-size: 10px;
   font-weight: 600;

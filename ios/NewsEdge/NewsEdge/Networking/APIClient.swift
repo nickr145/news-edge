@@ -25,8 +25,16 @@ final class APIClient {
         minRelevance: Double = 0.35,
         includeMock: Bool = false
     ) async throws -> [Article] {
-        let all = try await relevant(ticker: ticker, since: daysAgo(Double(days)), minRelevance: minRelevance)
-        return Array(all.prefix(limit))
+        try await events(ticker: ticker, since: daysAgo(Double(days)), minRelevance: minRelevance)
+            .prefix(limit)
+            .map { e in
+                var a = e.rep
+                a.relevanceScore = (e.relevance * 10_000).rounded() / 10_000
+                a.channel = e.channel
+                a.eventSize = e.size
+                a.eventOutlets = e.outlets
+                return a
+            }
     }
 
     func sentimentSummary(
@@ -35,16 +43,17 @@ final class APIClient {
         minRelevance: Double = 0.35,
         includeMock: Bool = false
     ) async throws -> SentimentSummary {
-        let items = try await relevant(ticker: ticker, since: daysAgo(Double(days)), minRelevance: minRelevance)
-        let weighted = items.map { ($0.compound ?? 0) * ($0.sourceWeight ?? 1) }
+        let evs = try await events(ticker: ticker, since: daysAgo(Double(days)), minRelevance: minRelevance)
+        let values = evs.map(\.value), weights = evs.map(\.weight)
         var labels = ["POSITIVE": 0, "NEUTRAL": 0, "NEGATIVE": 0]
-        for item in items { labels[item.sentimentLabel ?? "NEUTRAL", default: 0] += 1 }
+        for e in evs { labels[Analytics.label(e.value), default: 0] += 1 }
         let summary = SentimentSummary(
             ticker: ticker.uppercased(),
-            count: items.count,
-            meanCompound: Analytics.mean(weighted),
-            stdCompound: Analytics.std(weighted),
-            ewmaCompound: signal(items, days: Double(days)),
+            count: evs.count,
+            articleCount: evs.reduce(0) { $0 + $1.size },
+            meanCompound: Analytics.weightedMean(values, weights),
+            stdCompound: Analytics.weightedStd(values, weights),
+            ewmaCompound: signal(evs, days: Double(days)),
             labelDistribution: labels
         )
         if days == 7, minRelevance == 0.35 { SentimentSnapshot.publish(summary) }
@@ -57,13 +66,13 @@ final class APIClient {
         minRelevance: Double = 0.35,
         includeMock: Bool = false
     ) async throws -> SentimentTrend {
-        let items = try await relevant(ticker: ticker, since: daysAgo(Double(hours) / 24), minRelevance: minRelevance)
+        let evs = try await events(ticker: ticker, since: daysAgo(Double(hours) / 24), minRelevance: minRelevance)
         var utc = Calendar(identifier: .gregorian)
         utc.timeZone = TimeZone(identifier: "UTC")!
-        let buckets = Dictionary(grouping: items) { utc.startOfDay(for: $0.publishedAt) }
+        let buckets = Dictionary(grouping: evs) { utc.startOfDay(for: $0.time) }
         let points = buckets.keys.sorted().map { day -> SentimentTrendPoint in
-            let scores = buckets[day]!.map { ($0.compound ?? 0) * ($0.sourceWeight ?? 1) }
-            return SentimentTrendPoint(bucket: day, meanCompound: Analytics.mean(scores), articleCount: scores.count)
+            let group = buckets[day]!
+            return SentimentTrendPoint(bucket: day, meanCompound: Analytics.weightedMean(group.map(\.value), group.map(\.weight)), articleCount: group.count)
         }
         return SentimentTrend(ticker: ticker.uppercased(), points: points)
     }
@@ -84,20 +93,20 @@ final class APIClient {
 
     func predictSync(ticker: String, horizonDays: Int) async throws -> Prediction {
         async let bars = yahoo.bars(ticker: ticker)
-        async let one = relevant(ticker: ticker, since: daysAgo(1), minRelevance: 0.35)
-        async let seven = relevant(ticker: ticker, since: daysAgo(7), minRelevance: 0.35)
-        async let inHorizon = relevant(ticker: ticker, since: daysAgo(Double(horizonDays)), minRelevance: 0.35)
+        async let one = events(ticker: ticker, since: daysAgo(1), minRelevance: 0.35)
+        async let seven = events(ticker: ticker, since: daysAgo(7), minRelevance: 0.35)
+        async let inHorizon = events(ticker: ticker, since: daysAgo(Double(horizonDays)), minRelevance: 0.35)
         async let raw = store.articles(ticker: ticker)
 
         let allArticles = try await raw
-        let week = allArticles.filter { $0.publishedAt >= daysAgo(7) }.map { $0.compound ?? 0 }
+        let sevenDay = try await seven
         return Analytics.predict(
             ticker: ticker,
             horizonDays: horizonDays,
             signal: signal(try await inHorizon, days: Double(horizonDays)),
             ewma1d: signal(try await one, days: 1),
-            ewma7d: signal(try await seven, days: 7),
-            sentimentVolatility: Analytics.std(week),
+            ewma7d: signal(sevenDay, days: 7),
+            sentimentVolatility: Analytics.weightedStd(sevenDay.map(\.value), sevenDay.map(\.weight)),
             articleVolume24h: Double(allArticles.filter { $0.publishedAt >= daysAgo(1) }.count),
             price: Analytics.priceFeatures(bars: try await bars)
         )
@@ -107,32 +116,25 @@ final class APIClient {
 
     private func daysAgo(_ days: Double) -> Date { now().addingTimeInterval(-days * 86_400) }
 
-    /// Recency-weighted sentiment of `items` for a window/horizon of `days` (half-life = days / 3).
-    private func signal(_ items: [Article], days: Double) -> Double {
+    /// Recency-weighted sentiment of events for a window/horizon of `days` (half-life = days / 3).
+    private func signal(_ events: [NewsEvent], days: Double) -> Double {
         let t = now()
         return Analytics.decayedMean(
-            items.map { (value: ($0.compound ?? 0) * ($0.sourceWeight ?? 1), ageDays: t.timeIntervalSince($0.publishedAt) / 86_400) },
+            events.map { (value: $0.value, ageDays: t.timeIntervalSince($0.time) / 86_400, weight: $0.weight) },
             halfLifeDays: days / 3
         )
     }
 
-    /// Cached + fresh articles since `since`, headline-deduped (newest kept), scored for
-    /// relevance to `ticker` and filtered at `minRelevance`. Newest first.
-    private func relevant(ticker: String, since: Date, minRelevance: Double) async throws -> [Article] {
-        var seen = Set<String>()
-        var out: [Article] = []
-        for article in try await store.articles(ticker: ticker) where article.publishedAt >= since {
-            guard seen.insert(Analytics.dedupKey(article.headline)).inserted else { continue }
-            let score = Analytics.relevance(ticker: ticker, headline: article.headline, symbols: article.symbols ?? [])
-            guard score >= minRelevance else { continue }
-            out.append(Article(
-                id: article.id, url: article.url, headline: article.headline, summary: article.summary,
-                body: article.body, source: article.source, publishedAt: article.publishedAt,
-                sentimentLabel: article.sentimentLabel, compound: article.compound,
-                relevanceScore: (score * 10_000).rounded() / 10_000, sourceWeight: article.sourceWeight,
-                nearEarnings: article.nearEarnings, isSecFiling: article.isSecFiling, symbols: article.symbols
-            ))
+    /// Window + relevance (direct or indirect) + event grouping. Every aggregate works on events, so a story echoed by
+    /// many outlets is one vote with a bounded coverage boost, and indirect channels carry their own sign and weight.
+    private func events(ticker: String, since: Date, minRelevance: Double) async throws -> [NewsEvent] {
+        let profile = NewsEvents.profile(for: ticker, companyName: TickerCatalog.name(for: ticker))
+        var items: [ExposedArticle] = []
+        for a in try await store.articles(ticker: ticker) where a.publishedAt >= since {
+            guard let ex = NewsEvents.exposure(profile: profile, headline: a.headline, symbols: a.symbols ?? []),
+                  ex.relevance >= minRelevance else { continue }
+            items.append(ExposedArticle(article: a, exposure: ex, time: a.publishedAt, value: (a.compound ?? 0) * (a.sourceWeight ?? 1) * ex.sign))
         }
-        return out
+        return NewsEvents.groupEvents(items, ignore: NewsEvents.ignoreTokens(profile))
     }
 }

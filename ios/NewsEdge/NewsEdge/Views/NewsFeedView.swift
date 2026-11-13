@@ -14,7 +14,7 @@ struct NewsFeedView: View {
                 HStack {
                     Text("Live News").font(.headline).foregroundStyle(Theme.text)
                     Spacer()
-                    Text("\(articles.count) articles")
+                    Text("\(articles.count) stories")
                         .font(.mono(11))
                         .foregroundStyle(Theme.muted)
                     Image(systemName: collapsed ? "chevron.right" : "chevron.down")
@@ -48,6 +48,9 @@ struct NewsFeedView: View {
 private struct ArticleRow: View {
     let article: Article
 
+    /// Why a headline counts for this ticker when it doesn't name the company (see NewsEvents.swift).
+    private static let channelLabels = ["people": "Leadership", "supply": "Supply chain", "sector": "Sector", "competitor": "Competitor", "macro": "Macro"]
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             headline
@@ -59,6 +62,19 @@ private struct ArticleRow: View {
                     .padding(.vertical, 2)
                     .background(Theme.surface2, in: Capsule())
                     .overlay(Capsule().strokeBorder(Theme.border, lineWidth: 1))
+                if let channel = Self.channelLabels[article.channel ?? ""] {
+                    Text(channel)
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Color(red: 0.56, green: 0.71, blue: 1))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color(red: 0.56, green: 0.71, blue: 1).opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
+                }
+                if let outlets = article.eventOutlets, outlets > 1 {
+                    Text("+\(outlets - 1) outlet\(outlets > 2 ? "s" : "")")
+                        .font(.mono(9.5))
+                        .foregroundStyle(Theme.muted)
+                }
                 if let label = article.sentimentLabel, !label.isEmpty {
                     Text(label.uppercased())
                         .font(.system(size: 9, weight: .semibold))
