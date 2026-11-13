@@ -33,6 +33,9 @@ final class APIClient {
                 a.channel = e.channel
                 a.eventSize = e.size
                 a.eventOutlets = e.outlets
+                a.storyline = e.storyline
+                a.storyRank = e.storyRank
+                a.storyDamp = (e.damp * 10_000).rounded() / 10_000
                 return a
             }
     }
@@ -130,11 +133,14 @@ final class APIClient {
     private func events(ticker: String, since: Date, minRelevance: Double) async throws -> [NewsEvent] {
         let profile = NewsEvents.profile(for: ticker, companyName: TickerCatalog.name(for: ticker))
         var items: [ExposedArticle] = []
-        for a in try await store.articles(ticker: ticker) where a.publishedAt >= since {
+        // Storyline detection needs context (what is normal vs a burst), so look back at least 30 days even for a 1-day window.
+        let context = min(since, now().addingTimeInterval(-30 * 86_400))
+        for a in try await store.articles(ticker: ticker) where a.publishedAt >= context {
             guard let ex = NewsEvents.exposure(profile: profile, headline: a.headline, symbols: a.symbols ?? []),
                   ex.relevance >= minRelevance else { continue }
             items.append(ExposedArticle(article: a, exposure: ex, time: a.publishedAt, value: (a.compound ?? 0) * (a.sourceWeight ?? 1) * ex.sign))
         }
-        return NewsEvents.groupEvents(items, ignore: NewsEvents.ignoreTokens(profile))
+        let grouped = NewsEvents.groupEvents(items, ignore: NewsEvents.ignoreTokens(profile))
+        return NewsEvents.dampStorylines(grouped, exclude: NewsEvents.storylineExclusions(profile)).filter { $0.time >= since }
     }
 }

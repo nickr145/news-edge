@@ -379,6 +379,35 @@ struct DataLayerTests {
         #expect(StubProtocol.hitCount(googleRSS) == first)
     }
 
+    // MARK: storylines through the API (mirrors "storylines in the feed" in client.test.js)
+
+    private func storyClient(now: Date) -> APIClient {
+        let ordinary = (0..<40).map { NewsItem(title: "AAPL covers topic\($0) detail\($0)", time: now.addingTimeInterval(-Double(3 + $0 * 12) * 3600), tickers: ["AAPL"]) }
+        let story = (0..<14).map { NewsItem(title: "AAPL zorblax angle\($0) view\($0)", time: now.addingTimeInterval(-Double(1 + $0 * 3) * 3600), tickers: ["AAPL"]) }
+        StubProtocol.route(yahooSearch, body: searchJSON(ordinary + story))
+        StubProtocol.fail(googleRSS)
+        let store = NewsStore(directory: tempDir(), yahoo: yahoo(), google: GoogleNewsClient(session: StubProtocol.session),
+                              score: ScoreLog().score, companyName: { _ in nil }, indirect: false)
+        return APIClient(yahoo: yahoo(), store: store, now: { now })
+    }
+
+    @Test func storylineIsFlaggedRankedAndDampedInTheFeed() async throws {
+        let api = storyClient(now: Date())
+        let feed = try await api.articles(ticker: "AAPL", days: 30, limit: 200)
+        let story = feed.filter { $0.storyline == "zorblax" }.sorted { ($0.storyRank ?? 0) < ($1.storyRank ?? 0) }
+        #expect(story.count == 14)
+        #expect(story.first?.storyDamp == 1)
+        #expect(abs((story.last?.storyDamp ?? 0) - max(0.25, 1 / Double(14).squareRoot())) < 1e-3)
+        #expect(feed.filter { $0.storyline == nil }.allSatisfy { $0.storyDamp == 1 })
+    }
+
+    @Test func aOneDayWindowStillSeesTheStorylineBecauseDampingUsesThirtyDaysOfContext() async throws {
+        let api = storyClient(now: Date())
+        let day = try await api.articles(ticker: "AAPL", days: 1, limit: 200)
+        #expect(day.count > 5)
+        #expect(day.contains { $0.storyline == "zorblax" && ($0.storyRank ?? 0) > 1 })
+    }
+
     @Test func apiClientRisk() async throws {
         let closes = (0..<40).map { String(100 + $0) }.joined(separator: ",")
         let stamps = (0..<40).map { String(1_767_225_600 + $0 * 86_400) }.joined(separator: ",")

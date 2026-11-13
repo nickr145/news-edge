@@ -1,7 +1,9 @@
 // Event grouping + relationship-aware relevance for news. Mirrored by ios/NewsEdge/.../NewsEvents.swift;
 // both load the same curated data (data/news_profiles.json, synced by scripts/sync_news_profiles.py).
 import profiles from '../../data/newsProfiles.json'
+import background from '../../data/newsBackground.json'
 import * as A from './analytics'
+import { headlineTokens, stem } from './tokens'
 
 const HOUR = 3_600_000
 export const EVENT_WINDOW_MS = 48 * HOUR
@@ -42,6 +44,7 @@ export function profileFor(ticker, companyName = null) {
     sectorTerms: (sector?.sector_terms || []).map((x) => x.toLowerCase()),
     macro: (sector?.macro_terms || []).map((x) => x.toLowerCase()),
     inverse: (sector?.inverse_terms || []).map((x) => x.toLowerCase()),
+    chronic: (t.chronic || []).map((x) => x.toLowerCase()),
     sectorLabel: sector?.label || null
   }
 }
@@ -78,31 +81,8 @@ export function exposureOf(profile, headline, symbols = []) {
   return best
 }
 
-// ---- headline tokens -------------------------------------------------------
-const STOP = new Set(('a an the and or but of to in on at for from by with as is are was were be been it its this that these those will would could may might can '
-  + 'after before amid over under into than then so not no new says say said report reports reported reportedly news update updates today week here why how what who when '
-  + 'stock stocks share shares investors investor market markets wall street analyst analysts vs per via more most').split(' '))
-
-const stem = (w) => {
-  if (w.length > 5 && w.endsWith('ing')) return w.slice(0, -3)
-  if (w.length > 4 && w.endsWith('ed')) return w.slice(0, -2)
-  if (w.length > 3 && w.endsWith('s') && !w.endsWith('ss')) return w.slice(0, -1)
-  return w
-}
-
-/** Informative tokens of a headline: publisher suffix, filler words and the company's own names removed. */
-export function headlineTokens(headline, ignore = new Set()) {
-  const base = String(headline || '').replace(/\s*[-–|]\s*[A-Za-z][\w\s.&]{1,40}$/, '').toLowerCase()
-    .replace(/(?<=\d),(?=\d{3})/g, '').replace(/['’]s\b/g, '')
-  const out = new Set()
-  for (const raw of base.match(/[a-z0-9]+(?:\.\d+)?/g) || []) {
-    if (STOP.has(raw)) continue
-    const w = stem(raw)
-    if (w.length < 2 || STOP.has(w) || ignore.has(w)) continue
-    out.add(w)
-  }
-  return out
-}
+// ---- headline tokens: see tokens.js
+export { headlineTokens } from './tokens'
 
 /** Words belonging to the company itself (every headline has them, so they say nothing about *which* event). */
 export function ignoreTokens(profile) {
@@ -157,9 +137,81 @@ export function groupEvents(items, ignore) {
       latestMs: Math.max(...members.map((m) => m.tMs)),
       channel: top.exposure.channel,
       relevance: Math.max(...members.map((m) => m.exposure.relevance)),
-      rep: rep.article
+      rep: rep.article,
+      tokens: new Set(members.flatMap((m) => [...toks[items.indexOf(m)]])),
+      damp: 1, storyline: null, storyRank: 1
     }
   }).sort((a, b) => b.latestMs - a.latestMs)
+}
+
+// ---- storylines: one big story, told from many angles ------------------------
+export const STORY_WINDOW_MS = 72 * HOUR
+const STORY = {
+  minEvents: 30, floor: 0.25,
+  minLocal: 4, minRate: 0.12, minBurst: 3, minOutside: 20,   // enough older events to compare against: require a real burst
+  noBaselineLocal: 6, noBaselineRate: 0.15                    // a story fills the whole sample: rely on the stoplists, stricter counts
+}
+const BACKGROUND = new Set(background.tokens)
+
+/**
+ * Words that can never be a storyline for this ticker: ordinary headline vocabulary across tickers (data/news_background.json)
+ * and the ticker's own topical vocabulary (aliases, suppliers, sector/macro terms, competitors). People are deliberately
+ * not excluded (a leadership story is the canonical storyline), except a company's chronic newsmakers (profile.chronic).
+ */
+export function storylineExclusions(profile) {
+  const out = new Set(BACKGROUND)
+  for (const term of [...profile.aliases, ...profile.supply, ...profile.sectorTerms, ...profile.macro, ...profile.inverse, ...profile.competitors]) {
+    for (const t of headlineTokens(term)) out.add(t)
+  }
+  for (const person of profile.people) for (const t of headlineTokens(person)) out.delete(t)
+  for (const t of profile.chronic) out.add(t) // ...unless they are in nearly every story anyway (Musk at Tesla)
+  return out
+}
+
+const lowerBound = (arr, x) => { let lo = 0, hi = arr.length; while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m] < x) lo = m + 1; else hi = m } return lo }
+
+/**
+ * Different pieces about one developing story (a CEO exit: the resignation, the fallout, "what happens now") are
+ * different *events*, but together they would dominate the sentiment. A term is a storyline when it bursts: it is in
+ * at least `minLocal` events within +/-72h of an event and >= 12% of them, and at least 3x as common there as in the
+ * rest of the set (so steady words like "china" never qualify; Title Case headlines don't matter). The k-th event of
+ * a storyline within the window then counts for 1/sqrt(k) of its weight (floor 0.25): first reports count in full,
+ * the pile-on counts for progressively less. Returns the same events with `damp`, `storyline`, `storyRank`, and the
+ * damped `weight`. `exclude`: see storylineExclusions. Needs >= 30 events of context to tell a burst from vocabulary.
+ */
+export function dampStorylines(events, exclude = new Set()) {
+  const n = events.length
+  if (n < STORY.minEvents) return events
+  const order = events.map((_, i) => i).sort((a, b) => events[a].tMs - events[b].tMs || a - b)
+  const times = order.map((i) => events[i].tMs)               // all event times, ascending
+  const byToken = new Map()                                    // token -> ascending [time] of events containing it
+  for (const i of order) for (const t of events[i].tokens) byToken.set(t, [...(byToken.get(t) || []), events[i].tMs])
+  const out = events.map((e) => ({ ...e }))
+  events.forEach((e, i) => {
+    const lo = lowerBound(times, e.tMs - STORY_WINDOW_MS), hi = lowerBound(times, e.tMs + STORY_WINDOW_MS + 1)
+    const nbr = hi - lo, outsideN = n - nbr
+    const hasBaseline = outsideN >= STORY.minOutside
+    const [minLocal, minRate] = hasBaseline ? [STORY.minLocal, STORY.minRate] : [STORY.noBaselineLocal, STORY.noBaselineRate]
+    let best = null
+    for (const t of [...e.tokens].sort()) { // sorted so ties resolve identically in Swift
+      if (exclude.has(t)) continue
+      const ts = byToken.get(t)
+      if (ts.length < minLocal) continue
+      const l = lowerBound(ts, e.tMs - STORY_WINDOW_MS), h = lowerBound(ts, e.tMs + STORY_WINDOW_MS + 1)
+      const local = h - l
+      if (local < minLocal || local / nbr < minRate) continue
+      if (hasBaseline && (local / nbr) / ((ts.length - local) / outsideN + 0.02) < STORY.minBurst) continue
+      if (!best || local > best.local) best = { token: t, local, ts }
+    }
+    if (!best) return
+    // rank = 1 + events of this storyline strictly earlier within the window (ties by position)
+    const earlier = lowerBound(best.ts, e.tMs) - lowerBound(best.ts, e.tMs - STORY_WINDOW_MS)
+    const sameTime = events.filter((x, j) => j < i && x.tMs === e.tMs && x.tokens.has(best.token)).length
+    const rank = 1 + earlier + sameTime
+    const damp = Math.max(STORY.floor, 1 / Math.sqrt(rank))
+    out[i].damp = damp; out[i].storyline = best.token; out[i].storyRank = rank; out[i].weight = e.weight * damp
+  })
+  return out
 }
 
 // ---- searches that find the indirect news ----------------------------------

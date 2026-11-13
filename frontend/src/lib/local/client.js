@@ -73,14 +73,16 @@ export function createLocalApi({
   async function eventsFor(ticker, sinceMs, minRelevance) {
     const profile = profileOf(ticker)
     const items = []
+    // Storyline detection needs context (what is normal vs a burst), so look back at least 30 days even for a 1-day window.
+    const contextMs = Math.min(sinceMs, now().getTime() - 30 * DAY_MS)
     for (const a of await articles(ticker)) {
       const tMs = Date.parse(a.published_at)
-      if (tMs < sinceMs) continue
+      if (tMs < contextMs) continue
       const exposure = N.exposureOf(profile, a.headline, a.symbols || [])
       if (!exposure || exposure.relevance < minRelevance) continue
       items.push({ article: a, exposure, tMs, value: a.compound * (a.source_weight ?? 1) * exposure.sign })
     }
-    return N.groupEvents(items, N.ignoreTokens(profile))
+    return N.dampStorylines(N.groupEvents(items, N.ignoreTokens(profile)), N.storylineExclusions(profile)).filter((e) => e.tMs >= sinceMs)
   }
 
   const daysAgo = (d) => now().getTime() - d * DAY_MS
@@ -92,7 +94,8 @@ export function createLocalApi({
   const routes = [
     ['GET', /^\/api\/news\/([^/]+)$/, async ([t], p) =>
       (await eventsFor(t, daysAgo(p.days ?? 30), p.min_relevance ?? 0.35)).slice(0, p.limit ?? 100)
-        .map((e) => ({ ...e.rep, relevance_score: round4(e.relevance), channel: e.channel, event_size: e.size, event_outlets: e.outlets }))],
+        .map((e) => ({ ...e.rep, relevance_score: round4(e.relevance), channel: e.channel, event_size: e.size, event_outlets: e.outlets,
+          storyline: e.storyline, story_rank: e.storyRank, story_damp: round4(e.damp) }))],
     ['GET', /^\/api\/news\/([^/]+)\/sentiment$/, async ([t], p) => {
       const events = await eventsFor(t, daysAgo(p.days ?? 7), p.min_relevance ?? 0.35)
       const values = events.map((e) => e.value), weights = events.map((e) => e.weight)

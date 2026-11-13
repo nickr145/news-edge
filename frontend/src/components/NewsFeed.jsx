@@ -42,6 +42,7 @@ export default function NewsFeed({ articles, loading }) {
               <div className="news-meta">
                 <span className="source-chip">{a.source || 'unknown'}</span>
                 {CHANNEL_LABELS[a.channel] && <span className="channel-chip" title="Indirect news: it bears on this ticker without naming it">{CHANNEL_LABELS[a.channel]}</span>}
+                {a.story_damp < 1 && <span className="outlets-chip" title={`Part of an ongoing story ("${a.storyline}"), piece #${a.story_rank}: later pieces of a story count for less`}>ongoing · counts {Math.round(a.story_damp * 100)}%</span>}
                 {a.event_outlets > 1 && <span className="outlets-chip" title="Counted once; this story was reported by several outlets">+{a.event_outlets - 1} outlet{a.event_outlets > 2 ? 's' : ''}</span>}
                 {label && <span className={`news-badge ${label}`}>{label}</span>}
                 <span className="rel-score">rel {Number(a.relevance_score || 0).toFixed(2)}</span>

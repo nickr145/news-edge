@@ -140,4 +140,87 @@ struct NewsEventsTests {
         #expect(Analytics.weightedStd([1, 1], [1, 1]) == 0)
         #expect(abs(Analytics.weightedMean([0.5, -0.2, 0.1, 0.8, -0.6], [1, 1, 1, 1, 1]) - 0.12) < 1e-12)
     }
+
+    // MARK: storylines (mirrors the "storyline damping" tests in news.test.js)
+
+    private static let now = Date(timeIntervalSince1970: 1_794_484_800)
+
+    private func ev(_ i: Int, hoursAgo: Double, words: [String]) -> NewsEvent {
+        let t = Self.now.addingTimeInterval(-hoursAgo * 3600)
+        let a = Article(id: i, url: "u", headline: "h", summary: nil, body: nil, source: "X", publishedAt: t, sentimentLabel: nil, compound: nil,
+                        relevanceScore: nil, sourceWeight: 1, nearEarnings: nil, isSecFiling: nil)
+        return NewsEvent(id: i, articles: [a], outlets: 1, value: 0, weight: 1, time: t, latest: t, channel: "direct", relevance: 0.85, rep: a, tokens: Set(words))
+    }
+    /// 40 ordinary events over 20 days, each with its own distinctive words.
+    private func ordinary(_ n: Int = 40) -> [NewsEvent] {
+        (0..<n).map { ev($0, hoursAgo: 72 + Double($0) * 440 / Double(n), words: ["topic\($0)", "detail\($0)"]) }
+    }
+    /// A developing story: k events in the last 48h that all mention one word plus varied others.
+    private func story(_ k: Int, word: String = "zorblax") -> [NewsEvent] {
+        (0..<k).map { ev(1000 + $0, hoursAgo: 1 + Double($0) * 2, words: [word, "angle\($0)", "view\($0)"]) }
+    }
+
+    @Test func dampsTheKthEventOfABurstingTermByInverseSqrtRank() {
+        let out = NewsEvents.dampStorylines(ordinary() + story(20))
+        let s = out.filter { $0.storyline == "zorblax" }.sorted { $0.storyRank < $1.storyRank }
+        #expect(s.count == 20)
+        #expect(s.map(\.storyRank) == Array(1...20))                      // earliest first
+        #expect(s[0].damp == 1)
+        #expect(abs(s[3].damp - 0.5) < 1e-12)                              // 4th: 1/sqrt(4)
+        #expect(abs(s[15].damp - 0.25) < 1e-12)                            // 16th: 1/4, at the floor
+        #expect(s[19].damp == 0.25)                                        // never below the floor
+        #expect(s.allSatisfy { abs($0.weight - $0.damp) < 1e-12 })         // weight starts at 1
+    }
+
+    @Test func leavesUnrelatedEventsAlone() {
+        let out = NewsEvents.dampStorylines(ordinary() + story(20))
+        #expect(out.filter { $0.storyline == nil }.allSatisfy { $0.damp == 1 && $0.weight == 1 })
+    }
+
+    @Test func neverTreatsExcludedVocabularyAsAStoryline() {
+        let out = NewsEvents.dampStorylines(ordinary() + story(20), exclude: ["zorblax"])
+        #expect(out.allSatisfy { $0.storyline == nil && $0.damp == 1 })
+    }
+
+    @Test func needsContextAndLeavesFewEventsUntouched() {
+        let few = story(12)
+        #expect(NewsEvents.dampStorylines(few).allSatisfy { $0.storyline == nil && $0.damp == 1 })
+    }
+
+    @Test func steadyVocabularyIsNotABurstWhenOlderEventsProvideABaseline() {
+        let steady = (0..<60).map { ev($0, hoursAgo: 6 + Double($0) * 11, words: $0 % 3 == 0 ? ["regular", "x\($0)"] : ["y\($0)", "z\($0)"]) }
+        #expect(NewsEvents.dampStorylines(steady).allSatisfy { $0.storyline == nil })
+    }
+
+    @Test func withNoBaselineItNeedsMoreEventsAndAHigherShare() {
+        let base = (0..<50).map { ev($0, hoursAgo: 1 + Double($0) * 0.9, words: ["t\($0)", "u\($0)"]) }
+        var small = base; for i in 0..<5 { small[i] = ev(i, hoursAgo: 1 + Double(i) * 0.9, words: ["minorword", "a\(i)"]) }   // 5 events (10%)
+        #expect(NewsEvents.dampStorylines(small).allSatisfy { $0.storyline == nil })
+        var big = base; for i in 0..<12 { big[i] = ev(i, hoursAgo: 1 + Double(i) * 0.9, words: ["majorword", "a\(i)"]) }       // 12 events (24%)
+        #expect(NewsEvents.dampStorylines(big).filter { $0.storyline == "majorword" }.count == 12)
+    }
+
+    @Test func onlyEventsWithin72HoursPileUp() {
+        let long = (0..<24).map { ev(3000 + $0, hoursAgo: 2 + Double($0) * 6, words: ["zorblax", "a\($0)", "b\($0)"]) }
+        let out = NewsEvents.dampStorylines(ordinary(60) + long).filter { $0.storyline == "zorblax" }
+        #expect(out.count >= 20)
+        #expect((out.map(\.storyRank).max() ?? 0) <= 13 && (out.map(\.storyRank).max() ?? 0) >= 10)   // 72h / 6h = 12 earlier events + itself
+        #expect(out.allSatisfy { $0.damp >= 0.25 })
+    }
+
+    @Test func storylineExclusions() {
+        let nvda = NewsEvents.storylineExclusions(NewsEvents.profile(for: "NVDA", companyName: "NVIDIA Corporation"))
+        #expect(nvda.contains("ai"))            // ubiquitous headline word
+        #expect(nvda.contains("tsmc"))          // NVDA's own topical vocabulary
+        #expect(!nvda.contains("huang"))        // a leadership story must stay detectable
+        let tsla = NewsEvents.storylineExclusions(NewsEvents.profile(for: "TSLA", companyName: "Tesla, Inc."))
+        #expect(tsla.contains("musk"))          // chronic: Musk is in nearly every Tesla story
+        #expect(!tsla.contains("spacex"))       // but a Tesla-SpaceX merger story is detectable
+    }
+
+    @Test func corporateSuffixesAndExchangeTagsAreNotInformative() {
+        #expect(!NewsEvents.headlineTokens("JPMorgan Chase & Co. (NYSE:JPM) Shares Down 1.9%").contains("co"))
+        #expect(!NewsEvents.headlineTokens("Acme Corp Inc Ltd NYSE Nasdaq results").contains("corp"))
+    }
 }
+

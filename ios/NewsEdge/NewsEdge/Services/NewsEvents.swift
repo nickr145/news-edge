@@ -13,7 +13,7 @@ private struct ProfilesFile: Decodable {
     }
     struct Entry: Decodable {
         let sector: String?
-        let aliases: [String]?, people: [String]?, supply: [String]?, competitors: [String]?
+        let aliases: [String]?, people: [String]?, supply: [String]?, competitors: [String]?, chronic: [String]?
     }
     let channels: [String: Channel]
     let sectors: [String: Sector]
@@ -23,7 +23,7 @@ private struct ProfilesFile: Decodable {
 /// Everything we know about how news relates to one ticker (curated overrides + sector template + catalog name).
 struct NewsProfile: Equatable {
     let ticker: String
-    let aliases: [String], people: [String], supply: [String], competitors: [String]
+    let aliases: [String], people: [String], supply: [String], competitors: [String], chronic: [String]
     let sectorTerms: [String], macro: [String], inverse: [String]
     let sectorLabel: String?
 }
@@ -42,12 +42,16 @@ struct NewsEvent {
     let articles: [Article]
     let outlets: Int
     let value: Double          // weighted mean of members' signed, source-weighted sentiment
-    let weight: Double         // channel weight x coverage boost
+    var weight: Double         // channel weight x coverage boost (x storyline damping)
     let time: Date             // first report
     let latest: Date
     let channel: String
     let relevance: Double
     let rep: Article           // trusted outlet first, then newest
+    let tokens: Set<String>    // informative words of all member headlines (for storyline detection)
+    var damp: Double = 1       // 1/sqrt(rank) within a bursting storyline, floored; 1 otherwise
+    var storyline: String? = nil
+    var storyRank: Int = 1
     var size: Int { articles.count }
 }
 
@@ -98,7 +102,7 @@ enum NewsEvents {
         return NewsProfile(
             ticker: sym, aliases: aliases, people: lower(entry?.people),
             supply: lower((entry?.supply ?? []) + (sector?.supplyTerms ?? [])),
-            competitors: lower(entry?.competitors),
+            competitors: lower(entry?.competitors), chronic: lower(entry?.chronic),
             sectorTerms: lower(sector?.sectorTerms), macro: lower(sector?.macroTerms), inverse: lower(sector?.inverseTerms),
             sectorLabel: sector?.label
         )
@@ -151,7 +155,8 @@ enum NewsEvents {
     private static let stop: Set<String> = Set((
         "a an the and or but of to in on at for from by with as is are was were be been it its this that these those will would could may might can "
         + "after before amid over under into than then so not no new says say said report reports reported reportedly news update updates today week here why how what who when "
-        + "stock stocks share shares investors investor market markets wall street analyst analysts vs per via more most"
+        + "stock stocks share shares investors investor market markets wall street analyst analysts vs per via more most "
+        + "co corp inc ltd plc nyse nasdaq"
     ).split(separator: " ").map(String.init))
 
     private static func stem(_ w: String) -> String {
@@ -223,9 +228,10 @@ enum NewsEvents {
                 }
             }
         }
-        var groups: [Int: [ExposedArticle]] = [:]
-        for i in items.indices { groups[find(i), default: []].append(items[i]) }
-        return groups.values.map { members in
+        var groups: [Int: [Int]] = [:]
+        for i in items.indices { groups[find(i), default: []].append(i) }
+        return groups.values.map { idxs in
+            let members = idxs.map { items[$0] }
             let wSum = members.reduce(0) { $0 + $1.exposure.weight }
             let outlets = Set(members.map { Analytics.normalize($0.article.source ?? "").isEmpty ? String($0.article.id) : Analytics.normalize($0.article.source ?? "") }).count
             let rep = members.sorted {
@@ -243,9 +249,86 @@ enum NewsEvents {
                 latest: members.map(\.time).max()!,
                 channel: top.exposure.channel,
                 relevance: members.map(\.exposure.relevance).max()!,
-                rep: rep.article
+                rep: rep.article,
+                tokens: idxs.reduce(into: Set<String>()) { $0.formUnion(toks[$1]) }
             )
         }.sorted { $0.latest > $1.latest }
+    }
+
+    // MARK: - Storylines: one big story, told from many angles
+
+    static let storyWindow: TimeInterval = 72 * 3600
+    private enum Story {
+        static let minEvents = 30, floor = 0.25
+        static let minLocal = 4, minRate = 0.12, minBurst = 3.0, minOutside = 20   // enough older events to require a real burst
+        static let noBaselineLocal = 6, noBaselineRate = 0.15                      // a story fills the whole sample: stoplists + stricter counts
+    }
+
+    private static let background: Set<String> = {
+        struct File: Decodable { let tokens: [String] }
+        guard let url = Bundle.main.url(forResource: "NewsBackground", withExtension: "json"),
+              let data = try? Data(contentsOf: url), let f = try? JSONDecoder().decode(File.self, from: data) else { return [] }
+        return Set(f.tokens)
+    }()
+
+    /// Words that can never be a storyline for this ticker: ordinary headline vocabulary across tickers and the ticker's own
+    /// topical vocabulary. People are deliberately not excluded (a leadership story is the canonical storyline), except a
+    /// company's chronic newsmakers (Musk at Tesla).
+    static func storylineExclusions(_ profile: NewsProfile) -> Set<String> {
+        var out = background
+        for term in profile.aliases + profile.supply + profile.sectorTerms + profile.macro + profile.inverse + profile.competitors {
+            out.formUnion(headlineTokens(term))
+        }
+        for person in profile.people { out.subtract(headlineTokens(person)) }
+        for t in profile.chronic { out.insert(t) }
+        return out
+    }
+
+    private static func lowerBound(_ a: [TimeInterval], _ x: TimeInterval) -> Int {
+        var lo = 0, hi = a.count
+        while lo < hi { let m = (lo + hi) / 2; if a[m] < x { lo = m + 1 } else { hi = m } }
+        return lo
+    }
+
+    /// Different pieces about one developing story are different *events*, but together they would dominate the sentiment.
+    /// A term is a storyline when it bursts: in >= `minLocal` events within +/-72h of an event and >= 12% of them, and >= 3x as
+    /// common there as in the rest of the set (steady words never qualify; Title Case doesn't matter). The k-th event of a
+    /// storyline within the window counts for 1/sqrt(k) of its weight (floor 0.25). Mirrors dampStorylines in news.js.
+    static func dampStorylines(_ events: [NewsEvent], exclude: Set<String> = []) -> [NewsEvent] {
+        let n = events.count
+        guard n >= Story.minEvents else { return events }
+        let t = events.map { $0.time.timeIntervalSince1970 }
+        let order = events.indices.sorted { t[$0] != t[$1] ? t[$0] < t[$1] : $0 < $1 }
+        let times = order.map { t[$0] }
+        var byToken: [String: [TimeInterval]] = [:]
+        for i in order { for tok in events[i].tokens { byToken[tok, default: []].append(t[i]) } }
+        let w = storyWindow
+        var out = events
+        for (i, e) in events.enumerated() {
+            let nbr = lowerBound(times, t[i] + w + 0.001) - lowerBound(times, t[i] - w)
+            let outsideN = n - nbr
+            let hasBaseline = outsideN >= Story.minOutside
+            let minLocal = hasBaseline ? Story.minLocal : Story.noBaselineLocal
+            let minRate = hasBaseline ? Story.minRate : Story.noBaselineRate
+            var best: (token: String, local: Int, ts: [TimeInterval])?
+            for tok in e.tokens.sorted() where !exclude.contains(tok) {   // sorted so ties resolve identically to JS
+                guard let ts = byToken[tok], ts.count >= minLocal else { continue }
+                let local = lowerBound(ts, t[i] + w + 0.001) - lowerBound(ts, t[i] - w)
+                if local < minLocal || Double(local) / Double(nbr) < minRate { continue }
+                if hasBaseline, (Double(local) / Double(nbr)) / (Double(ts.count - local) / Double(outsideN) + 0.02) < Story.minBurst { continue }
+                if best == nil || local > best!.local { best = (tok, local, ts) }
+            }
+            guard let b = best else { continue }
+            let earlier = lowerBound(b.ts, t[i]) - lowerBound(b.ts, t[i] - w)
+            let sameTime = events.indices.filter { $0 < i && t[$0] == t[i] && events[$0].tokens.contains(b.token) }.count
+            let rank = 1 + earlier + sameTime
+            let damp = max(Story.floor, 1 / Double(rank).squareRoot())
+            out[i].damp = damp
+            out[i].storyline = b.token
+            out[i].storyRank = rank
+            out[i].weight = e.weight * damp
+        }
+        return out
     }
 
     // MARK: - Searches that find the indirect news

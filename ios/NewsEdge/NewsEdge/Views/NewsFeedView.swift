@@ -70,6 +70,11 @@ private struct ArticleRow: View {
                         .padding(.vertical, 2)
                         .background(Color(red: 0.56, green: 0.71, blue: 1).opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
                 }
+                if let damp = article.storyDamp, damp < 1 {
+                    Text("ongoing · counts \(Int((damp * 100).rounded()))%")
+                        .font(.mono(9.5))
+                        .foregroundStyle(Theme.muted)
+                }
                 if let outlets = article.eventOutlets, outlets > 1 {
                     Text("+\(outlets - 1) outlet\(outlets > 2 ? "s" : "")")
                         .font(.mono(9.5))
