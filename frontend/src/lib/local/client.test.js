@@ -139,12 +139,14 @@ describe('endpoints', () => {
     expect((await api.get('/api/news/AAPL', { params: { days: 7, min_relevance: 0.2 } })).data).toHaveLength(3)
     expect((await api.get('/api/news/AAPL', { params: { days: 7, limit: 1 } })).data).toHaveLength(1)
   })
-  it('summary: weighted mean, EWMA oldest->newest, labels', async () => {
+  it('summary: weighted mean, recency-weighted EWMA, labels', async () => {
     const { data: s } = await setup().api.get('/api/news/AAPL/sentiment', { params: { days: 7 } })
     expect(s.count).toBe(2)
     expect(s.label_distribution).toEqual({ POSITIVE: 1, NEUTRAL: 0, NEGATIVE: 1 })
     expect(s.mean_compound).toBeCloseTo(0.025, 9) // (0.8*1.0 + -0.6*1.25) / 2
-    expect(s.ewma_compound).toBeCloseTo(-0.285, 9) // -0.75 then 0.8
+    // recency-weighted: b is 1h older than a; half-life = 7/3 days, so b's weight is r = 0.5^((1/24)/(7/3)) of a's
+    const r = 0.5 ** ((1 / 24) / (7 / 3))
+    expect(s.ewma_compound).toBeCloseTo((0.8 - 0.75 * r) / (1 + r), 9)
   })
   it('trend buckets by UTC day with ISO bucket strings', async () => {
     const { data: t } = await setup().api.get('/api/news/AAPL/trend', { params: { hours: 24 * 30 } })
@@ -157,7 +159,14 @@ describe('endpoints', () => {
     const { api } = make({ search: { body: search(items) }, gnews: 'down', chart: { body: chart(closes, stamps) } })
     expect((await api.post('/api/news/subscribe/AAPL', null, { params: {} })).data.ok).toBe(true)
     const { data: p } = await api.post('/api/predict/AAPL/sync', { horizon_days: 14 })
-    expect(p.horizon_days).toBe(14); expect(p.recommendation).toBe('RISE')  // the +0.8 article is inside the 1-day window; expect(p.feature_importances.__model.version).toBe('fallback_rule_v2')
+    expect(p.horizon_days).toBe(14)
+    expect(['RISE', 'STABLE', 'FALL']).toContain(p.recommendation)
+    expect(p.feature_importances.__model.version).toBe('fallback_rule_v2')
+  })
+  it('subscribe/predict stay wired when the horizon is omitted (defaults to 5 days)', async () => {
+    const closes = Array.from({ length: 40 }, (_, i) => 100 + i), stamps = closes.map((_, i) => 1767225600 + i * 86400)
+    const { api } = make({ search: { body: search(items) }, gnews: 'down', chart: { body: chart(closes, stamps) } })
+    expect((await api.post('/api/predict/AAPL/sync', {})).data.horizon_days).toBe(5)
   })
   it('unknown routes fail loudly', async () => {
     await expect(setup().api.get('/api/nope')).rejects.toThrow(/No local handler/)
@@ -187,5 +196,34 @@ describe('proxy handler', () => {
     vi.unstubAllGlobals()
     expect(urls.map((u) => new URL(u).host)).toEqual(['query1.finance.yahoo.com', 'query1.finance.yahoo.com', 'api.nasdaq.com', 'news.google.com'])
     expect(urls[2]).toContain('/api/quote/BRK.B/historical')
+  })
+})
+
+// ---- the window and the horizon actually matter ---------------------------
+describe('recency-weighted sentiment', () => {
+  // One fresh negative headline (1h old) and three older positives (4 days old).
+  const mood = [
+    { title: 'AAPL bad flash', time: new Date(NOW.getTime() - H) },
+    ...['A', 'B', 'C'].map((x) => ({ title: `AAPL good ${x}`, time: new Date(NOW.getTime() - 4 * D) }))
+  ]
+  const closes = Array.from({ length: 40 }, (_, i) => 100 + i), stamps = closes.map((_, i) => 1767225600 + i * 86400)
+  const setup = () => make({ search: { body: search(mood) }, gnews: 'down', chart: { body: chart(closes, stamps) } })
+
+  it('the 1 / 5 / 14 day horizons give different recommendations', async () => {
+    const { api } = setup()
+    const rec = async (h) => (await api.post('/api/predict/AAPL/sync', { horizon_days: h })).data
+    const [d1, d5, d14] = [await rec(1), await rec(5), await rec(14)]
+    expect([d1.recommendation, d5.recommendation, d14.recommendation]).toEqual(['FALL', 'STABLE', 'RISE'])
+    expect(d1.sentiment_score).toBeCloseTo(-0.6, 9)            // only the fresh negative is inside 1 day
+    expect(d1.sentiment_score).toBeLessThan(d5.sentiment_score)
+    expect(d5.sentiment_score).toBeLessThan(d14.sentiment_score) // a longer horizon lets the older positives count
+    expect(d1.confidence).toBeCloseTo(0.52 + 0.6 * 0.35, 9)
+  })
+
+  it('the EWMA stat changes with the window', async () => {
+    const { api } = setup()
+    const ewma = async (days) => (await api.get('/api/news/AAPL/sentiment', { params: { days } })).data.ewma_compound
+    expect((await ewma(30)) - (await ewma(7))).toBeGreaterThan(0.05) // longer window, slower decay, older positives matter more
+    expect(await ewma(7)).not.toBeCloseTo(await ewma(5), 3)
   })
 })

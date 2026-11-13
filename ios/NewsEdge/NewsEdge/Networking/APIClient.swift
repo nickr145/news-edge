@@ -8,10 +8,12 @@ final class APIClient {
 
     private let yahoo: YahooClient
     private let store: NewsStore
+    private let now: @Sendable () -> Date
 
-    init(yahoo: YahooClient = .shared, store: NewsStore = .shared) {
+    init(yahoo: YahooClient = .shared, store: NewsStore = .shared, now: @escaping @Sendable () -> Date = { Date() }) {
         self.yahoo = yahoo
         self.store = store
+        self.now = now
     }
 
     // MARK: - News
@@ -34,7 +36,7 @@ final class APIClient {
         includeMock: Bool = false
     ) async throws -> SentimentSummary {
         let items = try await relevant(ticker: ticker, since: daysAgo(Double(days)), minRelevance: minRelevance)
-        let weighted = items.reversed().map { ($0.compound ?? 0) * ($0.sourceWeight ?? 1) } // oldest first for EWMA
+        let weighted = items.map { ($0.compound ?? 0) * ($0.sourceWeight ?? 1) }
         var labels = ["POSITIVE": 0, "NEUTRAL": 0, "NEGATIVE": 0]
         for item in items { labels[item.sentimentLabel ?? "NEUTRAL", default: 0] += 1 }
         let summary = SentimentSummary(
@@ -42,7 +44,7 @@ final class APIClient {
             count: items.count,
             meanCompound: Analytics.mean(weighted),
             stdCompound: Analytics.std(weighted),
-            ewmaCompound: Analytics.ewma(weighted),
+            ewmaCompound: signal(items, days: Double(days)),
             labelDistribution: labels
         )
         if days == 7, minRelevance == 0.35 { SentimentSnapshot.publish(summary) }
@@ -84,18 +86,17 @@ final class APIClient {
         async let bars = yahoo.bars(ticker: ticker)
         async let one = relevant(ticker: ticker, since: daysAgo(1), minRelevance: 0.35)
         async let seven = relevant(ticker: ticker, since: daysAgo(7), minRelevance: 0.35)
+        async let inHorizon = relevant(ticker: ticker, since: daysAgo(Double(horizonDays)), minRelevance: 0.35)
         async let raw = store.articles(ticker: ticker)
 
-        func ewma(_ items: [Article]) -> Double {
-            Analytics.ewma(items.reversed().map { ($0.compound ?? 0) * ($0.sourceWeight ?? 1) })
-        }
         let allArticles = try await raw
         let week = allArticles.filter { $0.publishedAt >= daysAgo(7) }.map { $0.compound ?? 0 }
         return Analytics.predict(
             ticker: ticker,
             horizonDays: horizonDays,
-            ewma1d: ewma(try await one),
-            ewma7d: ewma(try await seven),
+            signal: signal(try await inHorizon, days: Double(horizonDays)),
+            ewma1d: signal(try await one, days: 1),
+            ewma7d: signal(try await seven, days: 7),
             sentimentVolatility: Analytics.std(week),
             articleVolume24h: Double(allArticles.filter { $0.publishedAt >= daysAgo(1) }.count),
             price: Analytics.priceFeatures(bars: try await bars)
@@ -104,7 +105,16 @@ final class APIClient {
 
     // MARK: - Helpers
 
-    private func daysAgo(_ days: Double) -> Date { Date().addingTimeInterval(-days * 86_400) }
+    private func daysAgo(_ days: Double) -> Date { now().addingTimeInterval(-days * 86_400) }
+
+    /// Recency-weighted sentiment of `items` for a window/horizon of `days` (half-life = days / 3).
+    private func signal(_ items: [Article], days: Double) -> Double {
+        let t = now()
+        return Analytics.decayedMean(
+            items.map { (value: ($0.compound ?? 0) * ($0.sourceWeight ?? 1), ageDays: t.timeIntervalSince($0.publishedAt) / 86_400) },
+            halfLifeDays: days / 3
+        )
+    }
 
     /// Cached + fresh articles since `since`, headline-deduped (newest kept), scored for
     /// relevance to `ticker` and filtered at `minRelevance`. Newest first.

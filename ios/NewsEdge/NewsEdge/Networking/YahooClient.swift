@@ -86,12 +86,13 @@ actor YahooClient {
         guard let result = chart.chart.result?.first, let q = result.indicators.quote.first else { return [] }
         var bars: [PriceBar] = []
         for (i, ts) in (result.timestamp ?? []).enumerated() {
-            guard i < q.close.count, let close = q.close[i], let open = q.open[i],
-                  let high = q.high[i], let low = q.low[i] else { continue }
+            // Arrays should all be as long as `timestamp`; a short one (malformed response) skips the candle.
+            guard i < q.close.count, i < q.open.count, i < q.high.count, i < q.low.count,
+                  let close = q.close[i], let open = q.open[i], let high = q.high[i], let low = q.low[i] else { continue }
             bars.append(PriceBar(
                 timestamp: Date(timeIntervalSince1970: TimeInterval(ts)),
                 open: open, high: high, low: low, close: close,
-                volume: q.volume[i] ?? 0
+                volume: (i < q.volume.count ? q.volume[i] : nil) ?? 0
             ))
         }
         return bars

@@ -18,10 +18,18 @@ enum Analytics {
         return (v.reduce(0) { $0 + ($1 - m) * ($1 - m) } / Double(v.count - 1)).squareRoot()
     }
 
-    static func ewma(_ v: [Double], alpha: Double = 0.3) -> Double {
-        guard var acc = v.first else { return 0 }
-        for x in v.dropFirst() { acc = alpha * x + (1 - alpha) * acc }
-        return acc
+    /// Recency-weighted mean: each value's weight halves every `halfLifeDays` of age. Used for the
+    /// "EWMA" stat (half-life = window / 3, so the window matters) and the prediction signal
+    /// (half-life = horizon / 3). The backend's per-article EWMA (alpha 0.3) only ever reflected
+    /// the latest dozen headlines, whatever the window.
+    static func decayedMean(_ points: [(value: Double, ageDays: Double)], halfLifeDays: Double) -> Double {
+        var num = 0.0, den = 0.0
+        for p in points {
+            let w = pow(0.5, max(p.ageDays, 0) / halfLifeDays)
+            num += w * p.value
+            den += w
+        }
+        return den > 0 ? num / den : 0
     }
 
     // MARK: - Sentiment
@@ -147,9 +155,12 @@ enum Analytics {
 
     // MARK: - Prediction (fallback rule from app/services/prediction.py)
 
+    /// The backend's fallback rule (no trained model exists in production either), except that
+    /// `signal` is the recency-weighted sentiment over the chosen horizon, so 1/5/14 days differ.
     static func predict(
         ticker: String,
         horizonDays: Int,
+        signal: Double,
         ewma1d: Double,
         ewma7d: Double,
         sentimentVolatility: Double,
@@ -157,7 +168,7 @@ enum Analytics {
         price: PriceFeatures,
         now: Date = Date()
     ) -> Prediction {
-        let recommendation = ewma1d > 0.15 ? "RISE" : ewma1d < -0.15 ? "FALL" : "STABLE"
+        let recommendation = signal > 0.15 ? "RISE" : signal < -0.15 ? "FALL" : "STABLE"
         let features: [String: JSONValue] = [
             "ewma_sentiment_1d": .number(ewma1d),
             "ewma_sentiment_7d": .number(ewma7d),
@@ -175,8 +186,8 @@ enum Analytics {
             ticker: ticker.uppercased(),
             predictedAt: now,
             recommendation: recommendation,
-            confidence: min(0.85, 0.52 + abs(ewma1d) * 0.35),
-            sentimentScore: ewma1d,
+            confidence: min(0.85, 0.52 + abs(signal) * 0.35),
+            sentimentScore: signal,
             priceRsi: price.rsi14,
             featureImportances: features,
             horizonDays: horizonDays

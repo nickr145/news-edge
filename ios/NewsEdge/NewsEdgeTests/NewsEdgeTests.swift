@@ -20,8 +20,15 @@ struct AnalyticsTests {
         let x = [0.5, -0.2, 0.1, 0.8, -0.6]
         #expect(abs(Analytics.mean(x) - 0.12) < 1e-9)
         #expect(abs(Analytics.std(x) - 0.5540758070878028) < 1e-9)
-        #expect(abs(Analytics.ewma(x) - 0.10217) < 1e-9)
-        #expect(Analytics.ewma([]) == 0)
+    }
+
+    @Test func decayedMeanWeightsByAgeNotOrder() {
+        #expect(abs(Analytics.decayedMean([(0.2, 3), (0.6, 3)], halfLifeDays: 5) - 0.4) < 1e-12)      // equal ages: plain mean
+        #expect(abs(Analytics.decayedMean([(1, 0), (0, 1)], halfLifeDays: 1) - 1 / 1.5) < 1e-12)       // older value counts half
+        #expect(abs(Analytics.decayedMean([(1, -2), (0, 0)], halfLifeDays: 1) - 0.5) < 1e-12)          // future timestamps clamp to age 0
+        #expect(Analytics.decayedMean([], halfLifeDays: 1) == 0)
+        let pts: [(value: Double, ageDays: Double)] = [(-0.6, 0.04), (0.8, 4)]
+        #expect(Analytics.decayedMean(pts, halfLifeDays: 10) > Analytics.decayedMean(pts, halfLifeDays: 2)) // longer half-life: old counts more
     }
 
     @Test func riskMetricsMatchBackend() {
@@ -59,7 +66,7 @@ struct AnalyticsTests {
 
     @Test func predictionRule() {
         func rec(_ s: Double) -> Prediction {
-            Analytics.predict(ticker: "aapl", horizonDays: 5, ewma1d: s, ewma7d: 0, sentimentVolatility: 0,
+            Analytics.predict(ticker: "aapl", horizonDays: 5, signal: s, ewma1d: 0, ewma7d: 0, sentimentVolatility: 0,
                               articleVolume24h: 0, price: .init())
         }
         #expect(rec(0.2).recommendation == "RISE")

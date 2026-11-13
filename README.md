@@ -25,7 +25,7 @@ Real-time stock news sentiment platform with historical backfill, live streaming
 ### ML + Prediction
 - XGBoost model trained on sentiment features + technical indicators (RSI, momentum, Bollinger Band position, volume ratio).
 - SHAP explanations returned with every prediction, showing feature contributions to the signal.
-- Configurable prediction horizon: 1, 5, or 14 days.
+- Prediction horizon: 1, 5, or 14 days. The Railway backend stores it but its fallback rule ignores it (it always uses the 1-day EWMA); the iOS app and the backendless web mode use it (see below).
 - Prediction falls back to a sentiment-threshold rule (`RISE` above +0.15 EWMA, `FALL` below -0.15, else `STABLE`) when no trained model artifact is available or there's insufficient data to train one.
 - 5-day forward return labels (`RISE` / `STABLE` / `FALL` at ±2% threshold) persisted to `price_labels` table via Alpaca bars.
 - Celery Beat schedule:
@@ -68,10 +68,18 @@ npm test                            # analytics + data-layer tests (vitest)
 ```
 
 - **Data:** Yahoo Finance (bars + news), Nasdaq historical quotes as the price fallback, and Google News RSS for a first-open history backfill. Browsers can't call these directly (no CORS headers), so they go through one tiny allow-listed proxy, `api/proxy.mjs`: a Vercel Function in production and a Vite middleware in `npm run dev`. It forwards only four fixed targets and validates every parameter, but it is still a (stateless) serverless function, so "no backend" means no always-on server, database or Redis.
-- **Math:** `analytics.js` ports the backend's EWMA, relevance, dedup, risk metrics, RSI/Bollinger features and the RISE/STABLE/FALL rule; tests use values produced by the Python code.
+- **Math:** `analytics.js` ports the backend's relevance, dedup, risk metrics, RSI/Bollinger features and the RISE/STABLE/FALL rule; tests use values produced by the Python code. Sentiment aggregation is deliberately *not* a straight port, see "Recency-weighted sentiment" below.
 - **Sentiment:** VADER (`vader-sentiment`, the backend's default engine). FinBERT does not run in the browser here, and VADER is noticeably cruder on headlines than the FinBERT the iOS app uses.
 - **Storage:** articles accrue in `localStorage` (up to 90 days) and the last good bars are cached, so history starts at the first visit.
 - **Without the flag** the app talks to the backend exactly as before, so the Railway backend can only be retired once this mode (or an equivalent) ships.
+
+## Recency-weighted sentiment (iOS app and backendless web)
+
+The backend's "EWMA" decays by 0.3 per *article*, so it only ever reflects the latest dozen headlines: changing the window barely moved it, and its prediction rule used the 1-day value whatever the horizon. The iOS app and backendless web mode instead use a recency-weighted mean where an article's weight halves every `window / 3` days:
+
+- The **EWMA stat** uses the selected window (1/7/30/90 days), so the window now changes it.
+- The **recommendation** uses sentiment over the selected horizon (1/5/14 days, half-life `horizon / 3`) with the same RISE > +0.15 / FALL < -0.15 thresholds, so the horizon buttons can give different answers. Averaging many headlines pulls values toward zero, so STABLE is the common outcome; the thresholds may deserve recalibrating.
+- The Railway backend is unchanged and keeps the old behavior.
 
 ## Main Endpoints
 

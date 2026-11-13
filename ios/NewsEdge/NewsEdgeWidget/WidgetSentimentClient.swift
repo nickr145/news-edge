@@ -49,19 +49,20 @@ enum WidgetAPI {
                     guard let title = item.title, let time = item.providerPublishTime else { return nil }
                     return (title, time, item.relatedTickers ?? [])
                 }
-                .sorted { $0.time > $1.time } // newest first so dedup keeps the newest
+                .sorted { $0.time > $1.time }
 
             let since = Date().addingTimeInterval(-Double(days) * 86_400).timeIntervalSince1970
             var seen = Set<String>()
-            var scores: [Double] = []
-            for item in items.reversed() where Double(item.time) >= since { // oldest first for EWMA
+            var points: [(value: Double, ageDays: Double)] = []
+            let nowSeconds = Date().timeIntervalSince1970
+            for item in items where Double(item.time) >= since { // newest first, so dedup keeps the newest
                 guard seen.insert(Analytics.dedupKey(item.title)).inserted,
                       Analytics.relevance(ticker: ticker, headline: item.title, symbols: item.symbols) >= 0.35
                 else { continue }
-                scores.append(Analytics.sentiment(item.title))
+                points.append((Analytics.sentiment(item.title), (nowSeconds - Double(item.time)) / 86_400))
             }
-            guard !scores.isEmpty else { return empty }
-            return WidgetTickerSentiment(ticker: ticker, ewmaCompound: Analytics.ewma(scores), count: scores.count)
+            guard !points.isEmpty else { return empty }
+            return WidgetTickerSentiment(ticker: ticker, ewmaCompound: Analytics.decayedMean(points, halfLifeDays: Double(days) / 3), count: points.count)
         } catch {
             return empty
         }

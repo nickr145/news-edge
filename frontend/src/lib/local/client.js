@@ -69,17 +69,20 @@ export function createLocalApi({
 
   const weighted = (items) => items.map((a) => a.compound * (a.source_weight ?? 1))
   const daysAgo = (d) => now().getTime() - d * DAY_MS
-  const ewmaOf = (items) => A.ewma(weighted([...items].reverse())) // oldest first
+  /** Recency-weighted sentiment of `items` for a window/horizon of `days` (half-life = days / 3). */
+  const signalOf = (items, days) => A.decayedMean(
+    items.map((a) => ({ value: a.compound * (a.source_weight ?? 1), ageDays: (now().getTime() - Date.parse(a.published_at)) / DAY_MS })),
+    days / 3)
 
   const routes = [
     ['GET', /^\/api\/news\/([^/]+)$/, async ([t], p) =>
       (await relevant(t, daysAgo(p.days ?? 30), p.min_relevance ?? 0.35)).slice(0, p.limit ?? 100)],
     ['GET', /^\/api\/news\/([^/]+)\/sentiment$/, async ([t], p) => {
       const items = await relevant(t, daysAgo(p.days ?? 7), p.min_relevance ?? 0.35)
-      const w = weighted([...items].reverse())
+      const w = weighted(items)
       const labels = { POSITIVE: 0, NEUTRAL: 0, NEGATIVE: 0 }
       items.forEach((a) => { labels[a.sentiment_label] += 1 })
-      return { ticker: t.toUpperCase(), count: items.length, mean_compound: A.mean(w), std_compound: A.std(w), ewma_compound: A.ewma(w), label_distribution: labels }
+      return { ticker: t.toUpperCase(), count: items.length, mean_compound: A.mean(w), std_compound: A.std(w), ewma_compound: signalOf(items, p.days ?? 7), label_distribution: labels }
     }],
     ['GET', /^\/api\/news\/([^/]+)\/trend$/, async ([t], p) => {
       const items = await relevant(t, daysAgo((p.hours ?? 72) / 24), p.min_relevance ?? 0.35)
@@ -97,11 +100,13 @@ export function createLocalApi({
     }],
     ['POST', /^\/api\/news\/subscribe\/([^/]+)$/, async () => ({ ok: true, status: 'local' })], // nothing to subscribe to
     ['POST', /^\/api\/predict\/([^/]+)\/sync$/, async ([t], _p, body) => {
-      const [bars, one, seven, all] = await Promise.all([src.bars(t), relevant(t, daysAgo(1), 0.35), relevant(t, daysAgo(7), 0.35), articles(t)])
+      const horizon = body?.horizon_days ?? 5
+      const [bars, one, seven, inHorizon, all] = await Promise.all([
+        src.bars(t), relevant(t, daysAgo(1), 0.35), relevant(t, daysAgo(7), 0.35), relevant(t, daysAgo(horizon), 0.35), articles(t)])
       const week = all.filter((a) => Date.parse(a.published_at) >= daysAgo(7)).map((a) => a.compound)
       return A.predict({
-        ticker: t, horizonDays: body?.horizon_days ?? 5,
-        ewma1d: ewmaOf(one), ewma7d: ewmaOf(seven), sentimentVolatility: A.std(week),
+        ticker: t, horizonDays: horizon, signal: signalOf(inHorizon, horizon),
+        ewma1d: signalOf(one, 1), ewma7d: signalOf(seven, 7), sentimentVolatility: A.std(week),
         articleVolume24h: all.filter((a) => Date.parse(a.published_at) >= daysAgo(1)).length,
         price: A.priceFeatures(bars), now: now()
       })
