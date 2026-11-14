@@ -27,3 +27,13 @@ export function headlineTokens(headline, ignore = new Set()) {
   return out
 }
 
+/** Whole-term match (term bounded by non-alphanumerics), no regex so Swift can mirror it exactly. */
+export function hasTerm(text, term) {
+  let i = text.indexOf(term)
+  while (i !== -1) {
+    const before = i === 0 ? '' : text[i - 1], after = text[i + term.length] ?? ''
+    if (!/[a-z0-9]/.test(before) && !/[a-z0-9]/.test(after)) return true
+    i = text.indexOf(term, i + 1)
+  }
+  return false
+}

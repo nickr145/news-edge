@@ -24,7 +24,9 @@ export function createLocalApi({
   score = A.sentiment,
   companyName = (t) => TICKERS.find((x) => x.symbol === String(t).toUpperCase())?.name ?? null,
   now = () => new Date(),
-  embedder = (typeof window === 'undefined' ? null : createEmbedder()) // tests and SSR never download the model
+  embedder = (typeof window === 'undefined' ? null : createEmbedder()), // tests and SSR never download the model
+  semanticMode, // 'off' | 'shadow' | 'on'; default: events.semantic.mode in data/news_config.json
+  semanticThreshold // default: events.semantic.threshold (only evaluation overrides it)
 } = {}) {
   const src = createSources({ fetchImpl, storage })
   const newsKey = (t) => `newsedge_news_v1_${A.yahooSymbol(t)}`
@@ -83,6 +85,7 @@ export function createLocalApi({
     }).catch(() => {})
   }
 
+  const decisions = new Map() // ticker -> why the last grouping pass merged (or nearly merged) events; see debug.decisions
   const indirectDone = new Set() // tickers whose leadership/supply/sector/macro searches already ran this session
 
   /** Cached news + (once per session) the indirect searches, whose results are kept only if they bear on the ticker. */
@@ -104,7 +107,10 @@ export function createLocalApi({
       if (!exposure || exposure.relevance < minRelevance) continue
       items.push({ article: a, exposure, tMs, value: a.compound * (a.source_weight ?? 1) * exposure.sign })
     }
-    return N.dampStorylines(N.groupEvents(items, N.ignoreTokens(profile)), N.storylineExclusions(profile)).filter((e) => e.tMs >= sinceMs)
+    const log = []
+    const grouped = N.groupEvents(items, N.ignoreTokens(profile), { profile, log, semantic: semanticMode, threshold: semanticThreshold })
+    decisions.set(A.yahooSymbol(ticker), log)
+    return N.dampStorylines(grouped, N.storylineExclusions(profile)).filter((e) => e.tMs >= sinceMs)
   }
 
   const withoutEmb = ({ emb, ...rest }) => rest // embeddings stay in the cache, never in what the UI receives
@@ -118,7 +124,7 @@ export function createLocalApi({
     ['GET', /^\/api\/news\/([^/]+)$/, async ([t], p) =>
       (await eventsFor(t, daysAgo(p.days ?? 30), p.min_relevance ?? 0.35)).slice(0, p.limit ?? 100)
         .map((e) => ({ ...withoutEmb(e.rep), relevance_score: round4(e.relevance), channel: e.channel, event_size: e.size, event_outlets: e.outlets,
-          storyline: e.storyline, story_rank: e.storyRank, story_damp: round4(e.damp) }))],
+          storyline: e.storyline, story_rank: e.storyRank, story_damp: round4(e.damp), semantic_score: e.semantic == null ? null : round4(e.semantic) }))],
     ['GET', /^\/api\/news\/([^/]+)\/sentiment$/, async ([t], p) => {
       const events = await eventsFor(t, daysAgo(p.days ?? 7), p.min_relevance ?? 0.35)
       const values = events.map((e) => e.value), weights = events.map((e) => e.weight)
@@ -169,7 +175,9 @@ export function createLocalApi({
 
   return {
     get: (path, { params } = {}) => call('GET', path, params),
-    post: (path, body, { params } = {}) => call('POST', path, params, body)
+    post: (path, body, { params } = {}) => call('POST', path, params, body),
+    /** Explainability: the semantic merges and near misses behind the last grouping of `ticker` (see semantic.js). */
+    debug: { decisions: (ticker) => decisions.get(A.yahooSymbol(ticker)) || [] }
   }
 }
 
