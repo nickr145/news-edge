@@ -2,11 +2,13 @@
 // both load the same curated data (data/news_profiles.json, synced by scripts/sync_news_profiles.py).
 import profiles from '../../data/newsProfiles.json'
 import background from '../../data/newsBackground.json'
+import config from '../../data/newsConfig.json'
 import * as A from './analytics'
 import { headlineTokens, stem } from './tokens'
 
 const HOUR = 3_600_000
-export const EVENT_WINDOW_MS = 48 * HOUR
+const { events: EV, storylines: SL } = config
+export const EVENT_WINDOW_MS = EV.window_hours * HOUR
 const GENERIC_FIRST_WORDS = new Set(['general', 'united', 'american', 'first', 'national', 'international', 'global', 'southern', 'western', 'eastern', 'northern', 'pacific', 'great', 'new', 'bank'])
 const SUFFIXES = /\b(inc|corp|corporation|co|company|ltd|plc|holdings|group|incorporated|class [a-c]|the)\b\.?/g
 
@@ -99,11 +101,11 @@ export function sameEvent(a, b) {
   if (inter < 2) return false
   const jaccard = inter / (a.size + b.size - inter)
   const overlap = inter / Math.min(a.size, b.size)
-  return jaccard >= 0.5 || (overlap >= 0.75 && inter >= 3)
+  return jaccard >= EV.lexical.jaccard || (overlap >= EV.lexical.overlap && inter >= EV.lexical.min_overlap_tokens)
 }
 
 /** One event's weight: 1 for a single outlet, +0.5*ln(outlets) beyond that, capped (echo != importance, breadth != nothing). */
-export const coverageBoost = (outlets) => Math.min(2.5, 1 + 0.5 * Math.log(Math.max(outlets, 1)))
+export const coverageBoost = (outlets) => Math.min(EV.outlet_weight.cap, 1 + EV.outlet_weight.slope * Math.log(Math.max(outlets, 1)))
 
 /**
  * Groups exposed articles into events. `items`: { article, exposure, tMs, value } where value already includes
@@ -145,11 +147,11 @@ export function groupEvents(items, ignore) {
 }
 
 // ---- storylines: one big story, told from many angles ------------------------
-export const STORY_WINDOW_MS = 72 * HOUR
+export const STORY_WINDOW_MS = SL.window_hours * HOUR
 const STORY = {
-  minEvents: 30, floor: 0.25,
-  minLocal: 4, minRate: 0.12, minBurst: 3, minOutside: 20,   // enough older events to compare against: require a real burst
-  noBaselineLocal: 6, noBaselineRate: 0.15                    // a story fills the whole sample: rely on the stoplists, stricter counts
+  minEvents: SL.min_events, floor: SL.damping_floor,
+  minLocal: SL.min_local, minRate: SL.min_rate, minBurst: SL.min_burst, minOutside: SL.min_outside, // enough older events to compare against: require a real burst
+  noBaselineLocal: SL.no_baseline_local, noBaselineRate: SL.no_baseline_rate                        // a story fills the whole sample: rely on the stoplists, stricter counts
 }
 const BACKGROUND = new Set(background.tokens)
 

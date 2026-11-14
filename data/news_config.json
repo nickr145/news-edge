@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "events": {
+    "window_hours": 48,
+    "lexical": { "jaccard": 0.5, "overlap": 0.75, "min_overlap_tokens": 3 },
+    "outlet_weight": { "slope": 0.5, "cap": 2.5 }
+  },
+  "storylines": {
+    "window_hours": 72,
+    "context_days": 30,
+    "min_events": 30,
+    "damping_floor": 0.25,
+    "min_local": 4,
+    "min_rate": 0.12,
+    "min_burst": 3,
+    "min_outside": 20,
+    "no_baseline_local": 6,
+    "no_baseline_rate": 0.15
+  },
+  "embedding": {
+    "model": "all-MiniLM-L6-v2",
+    "dimension": 384,
+    "max_tokens": 64,
+    "prefix_company_when_missing": true
+  }
+}
