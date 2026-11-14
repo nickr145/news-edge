@@ -430,8 +430,8 @@ struct DataLayerTests {
         StubProtocol.route("models.test/m/model.mil", body: "hello")
         StubProtocol.route("models.test/m/weights__weight.bin", body: "world")
     }
-    @MainActor private func modelStore(install: URL, bundled: Bool = false) -> FinBERTModelStore {
-        FinBERTModelStore(session: StubProtocol.session, baseURL: URL(string: "https://models.test/m/")!,
+    @MainActor private func modelStore(install: URL, bundled: Bool = false) -> CoreMLModelStore {
+        CoreMLModelStore(session: StubProtocol.session, baseURL: URL(string: "https://models.test/m/")!,
                           installURL: install, bundledPresent: bundled)
     }
 
@@ -480,6 +480,58 @@ struct DataLayerTests {
         store.startIfNeeded(); await store.waitUntilFinished()
         #expect(store.state == .bundled)
         #expect(StubProtocol.hitCount("models.test/m/manifest.json") == 0)
+    }
+    // MARK: embeddings
+
+    /// Stand-in for MiniLM: counts texts embedded and returns a deterministic unit-ish vector per text.
+    final class EmbedLog: @unchecked Sendable {
+        private let lock = NSLock()
+        private var texts: [String] = []
+        var count: Int { lock.lock(); defer { lock.unlock() }; return texts.count }
+        var all: [String] { lock.lock(); defer { lock.unlock() }; return texts }
+        func embed(_ batch: [String]) -> [[Float]]? {
+            lock.lock(); texts += batch; lock.unlock()
+            return batch.map { t in (0..<8).map { Float(sin(Double(t.count + $0 + 1))) } }
+        }
+    }
+
+    @Test func storeEmbedsEachArticleOnceInTheBackgroundAndKeepsVectorsOutOfTheFeed() async throws {
+        let log = EmbedLog(), now = Date()
+        StubProtocol.route(yahooSearch, body: searchJSON([NewsItem(title: "Apple good one", time: now), NewsItem(title: "Chipmaker chief steps down", time: now)]))
+        StubProtocol.fail(googleRSS)
+        let dir = tempDir()
+        let store = NewsStore(directory: dir, yahoo: yahoo(), google: GoogleNewsClient(session: StubProtocol.session),
+                              score: { _ in 0 }, companyName: { _ in "Apple Inc." }, indirect: false, embed: log.embed)
+        let first = try await store.articles(ticker: "AAPL")
+        #expect(first.allSatisfy { $0.emb == nil }) // the articles come back without waiting for the embedder
+        await store.waitForEmbeddings()
+        #expect(log.all.sorted() == ["Apple good one", "Apple: Chipmaker chief steps down"]) // company named only where missing
+        let stored = try await store.articles(ticker: "AAPL")
+        #expect(stored.allSatisfy { $0.emb != nil && EmbeddingCodec.dequantize($0.emb!)?.count == 8 })
+        await store.waitForEmbeddings()
+        #expect(log.count == 2) // a second pass finds nothing to embed
+
+        // A relaunch (new store, same cache) never re-embeds either.
+        let reopened = NewsStore(directory: dir, yahoo: yahoo(), google: GoogleNewsClient(session: StubProtocol.session),
+                                 score: { _ in 0 }, companyName: { _ in "Apple Inc." }, indirect: false, embed: log.embed)
+        _ = try await reopened.articles(ticker: "AAPL"); await reopened.waitForEmbeddings()
+        #expect(log.count == 2)
+
+        // ...and the feed served to the UI carries no vectors.
+        let api = APIClient(yahoo: yahoo(), store: reopened, now: { now })
+        let feed = try await api.articles(ticker: "AAPL", days: 7, minRelevance: 0.2)
+        #expect(!feed.isEmpty && feed.allSatisfy { $0.emb == nil })
+    }
+
+    @Test func storeKeepsWorkingWhenTheEmbedderFails() async throws {
+        let now = Date()
+        StubProtocol.route(yahooSearch, body: searchJSON([NewsItem(title: "AAPL good one", time: now)]))
+        StubProtocol.fail(googleRSS)
+        let store = NewsStore(directory: tempDir(), yahoo: yahoo(), google: GoogleNewsClient(session: StubProtocol.session),
+                              score: { _ in 0 }, companyName: { _ in nil }, indirect: false, embed: { _ in nil })
+        _ = try await store.articles(ticker: "AAPL"); await store.waitForEmbeddings()
+        let again = try await store.articles(ticker: "AAPL")
+        #expect(again.count == 1 && again[0].emb == nil)
     }
 }
 

@@ -4,7 +4,7 @@ import SwiftUI
 /// watchlist section shown when there's no active query.
 struct SearchScreen: View {
     @Environment(WatchlistStore.self) private var watchlistStore
-    @Environment(FinBERTModelStore.self) private var modelStore
+    @Environment(CoreMLModelStore.self) private var modelStore
     @Binding var path: NavigationPath
     @State private var query = ""
 
@@ -137,5 +137,5 @@ struct SearchScreen: View {
         SearchScreen(path: .constant(NavigationPath()))
     }
     .environment(WatchlistStore())
-    .environment(FinBERTModelStore())
+    .environment(CoreMLModelStore())
 }

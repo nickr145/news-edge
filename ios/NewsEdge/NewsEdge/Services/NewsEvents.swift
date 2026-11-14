@@ -63,7 +63,7 @@ struct ExposedArticle {
 }
 
 enum NewsEvents {
-    static let eventWindow: TimeInterval = 48 * 3600
+    static let eventWindow: TimeInterval = NewsConfig.shared.events.windowHours * 3600
     private static let directMin = 0.35 // the default minimum relevance
 
     private static let file: ProfilesFile? = {
@@ -204,11 +204,12 @@ enum NewsEvents {
         if inter < 2 { return false }
         let jaccard = Double(inter) / Double(a.count + b.count - inter)
         let overlap = Double(inter) / Double(min(a.count, b.count))
-        return jaccard >= 0.5 || (overlap >= 0.75 && inter >= 3)
+        let lex = NewsConfig.shared.events.lexical
+        return jaccard >= lex.jaccard || (overlap >= lex.overlap && inter >= lex.minOverlapTokens)
     }
 
     /// One event's weight: 1 for a single outlet, +0.5*ln(outlets) beyond that, capped (echo != importance, breadth != nothing).
-    static func coverageBoost(_ outlets: Int) -> Double { min(2.5, 1 + 0.5 * log(Double(max(outlets, 1)))) }
+    static func coverageBoost(_ outlets: Int) -> Double { min(NewsConfig.shared.events.outletWeight.cap, 1 + NewsConfig.shared.events.outletWeight.slope * log(Double(max(outlets, 1)))) }
 
     // MARK: - Grouping
 
@@ -257,11 +258,12 @@ enum NewsEvents {
 
     // MARK: - Storylines: one big story, told from many angles
 
-    static let storyWindow: TimeInterval = 72 * 3600
+    static let storyWindow: TimeInterval = NewsConfig.shared.storylines.windowHours * 3600
     private enum Story {
-        static let minEvents = 30, floor = 0.25
-        static let minLocal = 4, minRate = 0.12, minBurst = 3.0, minOutside = 20   // enough older events to require a real burst
-        static let noBaselineLocal = 6, noBaselineRate = 0.15                      // a story fills the whole sample: stoplists + stricter counts
+        private static let c = NewsConfig.shared.storylines
+        static let minEvents = c.minEvents, floor = c.dampingFloor
+        static let minLocal = c.minLocal, minRate = c.minRate, minBurst = c.minBurst, minOutside = c.minOutside   // enough older events to require a real burst
+        static let noBaselineLocal = c.noBaselineLocal, noBaselineRate = c.noBaselineRate                          // a story fills the whole sample: stoplists + stricter counts
     }
 
     private static let background: Set<String> = {
