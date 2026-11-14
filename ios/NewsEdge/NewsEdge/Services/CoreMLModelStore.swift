@@ -2,14 +2,20 @@ import CryptoKit
 import Foundation
 import Observation
 
-/// Downloads the compiled FinBERT Core ML model on first launch instead of shipping its 105 MB in the
-/// app bundle (see scripts/package_finbert_model.py for the release layout). Until it lands the app
+/// Downloads a compiled Core ML model on first launch instead of shipping it in the app bundle (see
+/// scripts/package_finbert_model.py for the release layout). `shared` is FinBERT (105 MB): until it lands the app
 /// scores with NLTagger; when it does, `FinBERTScorer.reload()` switches over and NewsStore re-scores.
+/// `embedder` is the 22 MB MiniLM sentence-embedding model: until it lands, grouping stays lexical.
 @MainActor @Observable
-final class FinBERTModelStore {
-    static let shared = FinBERTModelStore()
+final class CoreMLModelStore {
+    static let shared = CoreMLModelStore()
 
     static let defaultBaseURL = URL(string: "https://github.com/nickr145/news-edge/releases/download/finbert-coreml-v1/")!
+
+    static let embedder = CoreMLModelStore(
+        baseURL: SentenceEmbedder.releaseURL, installURL: SentenceEmbedder.downloadedModelURL,
+        bundledPresent: Bundle.main.url(forResource: "MiniLM", withExtension: "mlmodelc") != nil,
+        modelName: "sentence", onInstalled: { SentenceEmbedder.reload() })
 
     enum State: Equatable {
         case bundled            // model ships inside the app (dev builds); nothing to download
@@ -31,20 +37,24 @@ final class FinBERTModelStore {
     private let baseURL: URL
     private let installURL: URL
     private let bundledPresent: Bool
+    private let modelName: String
+    private let onInstalled: @MainActor () -> Void
     private var task: Task<Void, Never>?
 
     init(
         session: URLSession? = nil,
-        baseURL: URL = FinBERTModelStore.defaultBaseURL,
+        baseURL: URL = CoreMLModelStore.defaultBaseURL,
         installURL: URL = FinBERTScorer.downloadedModelURL,
-        bundledPresent: Bool = Bundle.main.url(forResource: "FinBERT", withExtension: "mlmodelc") != nil
+        bundledPresent: Bool = Bundle.main.url(forResource: "FinBERT", withExtension: "mlmodelc") != nil,
+        modelName: String = "sentiment",
+        onInstalled: @escaping @MainActor () -> Void = { FinBERTScorer.reload() }
     ) {
         if let session {
             self.session = session
         } else {
             let config = URLSessionConfiguration.default
             config.waitsForConnectivity = true
-            config.allowsExpensiveNetworkAccess = false   // 105 MB: Wi-Fi only
+            config.allowsExpensiveNetworkAccess = false   // tens of MB: Wi-Fi only
             config.allowsConstrainedNetworkAccess = false // and not in Low Data Mode
             config.timeoutIntervalForResource = 3600
             self.session = URLSession(configuration: config)
@@ -52,6 +62,8 @@ final class FinBERTModelStore {
         self.baseURL = baseURL
         self.installURL = installURL
         self.bundledPresent = bundledPresent
+        self.modelName = modelName
+        self.onInstalled = onInstalled
         self.state = bundledPresent ? .bundled
             : FileManager.default.fileExists(atPath: installURL.path) ? .ready : .idle
     }
@@ -76,10 +88,10 @@ final class FinBERTModelStore {
     private func run() async {
         do {
             try await install()
-            FinBERTScorer.reload()
+            onInstalled()
             state = .ready
         } catch {
-            state = .failed((error as? ModelError)?.message ?? "Couldn't download the sentiment model.")
+            state = .failed((error as? ModelError)?.message ?? "Couldn't download the \(modelName) model.")
         }
     }
 
@@ -94,7 +106,7 @@ final class FinBERTModelStore {
         } catch let error as ModelError { throw error } catch { throw ModelError(message: "Couldn't reach the model server.") }
 
         let fm = FileManager.default
-        let staging = installURL.deletingLastPathComponent().appendingPathComponent("FinBERT.partial-\(UUID().uuidString)")
+        let staging = installURL.deletingLastPathComponent().appendingPathComponent("\(installURL.lastPathComponent).partial-\(UUID().uuidString)")
         try fm.createDirectory(at: staging, withIntermediateDirectories: true)
         defer { try? fm.removeItem(at: staging) }
 

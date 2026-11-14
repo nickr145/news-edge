@@ -19,6 +19,7 @@ pairs = [  # (source of truth, copy)
     (root / "data/news_background.json", root / "ios/NewsEdge/NewsEdge/Resources/NewsBackground.json"),
     (root / "data/news_config.json", root / "frontend/src/data/newsConfig.json"),
     (root / "data/news_config.json", root / "ios/NewsEdge/NewsEdge/Resources/NewsConfig.json"),
+    (root / "data/embedding_fixtures.json", root / "ios/NewsEdge/NewsEdge/Resources/EmbeddingFixtures.json"),
 ]
 
 stale = [c for src, c in pairs if not c.exists() or not filecmp.cmp(src, c, shallow=False)]

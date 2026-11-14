@@ -18,6 +18,8 @@ struct Article: Codable, Identifiable, Equatable {
     let isSecFiling: Bool?
     /// Tickers Yahoo tagged the article with; feeds `Analytics.relevance`.
     var symbols: [String]? = nil
+    /// Sentence embedding (int8, base64; see EmbeddingCodec). Cached with the article, never shown or sent on.
+    var emb: String? = nil
     /// Set on articles returned by `APIClient.articles` (not stored): why it bears on the ticker
     /// ("direct", "people", "supply", "sector", "competitor", "macro") and how many articles/outlets the event had.
     var channel: String? = nil
@@ -29,7 +31,7 @@ struct Article: Codable, Identifiable, Equatable {
     var storyDamp: Double? = nil
 
     enum CodingKeys: String, CodingKey {
-        case id, url, headline, summary, body, source, compound, symbols, channel, storyline
+        case id, url, headline, summary, body, source, compound, symbols, channel, storyline, emb
         case publishedAt = "published_at"
         case sentimentLabel = "sentiment_label"
         case relevanceScore = "relevance_score"

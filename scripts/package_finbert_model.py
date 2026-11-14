@@ -4,6 +4,8 @@
     python3 scripts/package_finbert_model.py /tmp/compiled/FinBERT.mlmodelc /tmp/release
     gh release create finbert-coreml-v1 /tmp/release/* --title "FinBERT Core ML v1" --notes "..."
 
+The same script packages MiniLM (`MiniLM.mlmodelc`, release `minilm-coreml-v1`).
+
 GitHub release assets can't contain '/', so paths are flattened with '__'. The app
 (FinBERTModelStore) downloads manifest.json, then each asset, verifies size + SHA-256,
 and rebuilds the .mlmodelc directory in Application Support.
