@@ -2,8 +2,39 @@
   "version": 1,
   "events": {
     "window_hours": 48,
-    "lexical": { "jaccard": 0.5, "overlap": 0.75, "min_overlap_tokens": 3 },
-    "outlet_weight": { "slope": 0.5, "cap": 2.5 }
+    "lexical": {
+      "jaccard": 0.5,
+      "overlap": 0.75,
+      "min_overlap_tokens": 3
+    },
+    "outlet_weight": {
+      "slope": 0.5,
+      "cap": 2.5
+    },
+    "semantic": {
+      "mode": "shadow",
+      "threshold": 0.88,
+      "near_miss_margin": 0.08,
+      "weights": {
+        "semantic": 0.65,
+        "entity": 0.2,
+        "time": 0.15
+      },
+      "time_similarity": [
+        [
+          0,
+          1
+        ],
+        [
+          24,
+          0.75
+        ],
+        [
+          48,
+          0.25
+        ]
+      ]
+    }
   },
   "storylines": {
     "window_hours": 72,

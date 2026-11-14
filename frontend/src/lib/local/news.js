@@ -4,24 +4,14 @@ import profiles from '../../data/newsProfiles.json'
 import background from '../../data/newsBackground.json'
 import config from '../../data/newsConfig.json'
 import * as A from './analytics'
-import { headlineTokens, stem } from './tokens'
+import { semanticMerges } from './semantic'
+import { hasTerm, headlineTokens, stem } from './tokens'
 
 const HOUR = 3_600_000
 const { events: EV, storylines: SL } = config
 export const EVENT_WINDOW_MS = EV.window_hours * HOUR
 const GENERIC_FIRST_WORDS = new Set(['general', 'united', 'american', 'first', 'national', 'international', 'global', 'southern', 'western', 'eastern', 'northern', 'pacific', 'great', 'new', 'bank'])
 const SUFFIXES = /\b(inc|corp|corporation|co|company|ltd|plc|holdings|group|incorporated|class [a-c]|the)\b\.?/g
-
-/** Whole-term match (term bounded by non-alphanumerics), no regex so Swift can mirror it exactly. */
-export function hasTerm(text, term) {
-  let i = text.indexOf(term)
-  while (i !== -1) {
-    const before = i === 0 ? '' : text[i - 1], after = text[i + term.length] ?? ''
-    if (!/[a-z0-9]/.test(before) && !/[a-z0-9]/.test(after)) return true
-    i = text.indexOf(term, i + 1)
-  }
-  return false
-}
 
 const cleanName = (name) => name.toLowerCase().replace(/&/g, ' and ').replace(SUFFIXES, ' ').replace(/[.,]/g, ' ').replace(/\s+/g, ' ').trim()
 
@@ -84,7 +74,7 @@ export function exposureOf(profile, headline, symbols = []) {
 }
 
 // ---- headline tokens: see tokens.js
-export { headlineTokens } from './tokens'
+export { hasTerm, headlineTokens } from './tokens'
 
 /** Words belonging to the company itself (every headline has them, so they say nothing about *which* event). */
 export function ignoreTokens(profile) {
@@ -111,7 +101,7 @@ export const coverageBoost = (outlets) => Math.min(EV.outlet_weight.cap, 1 + EV.
  * Groups exposed articles into events. `items`: { article, exposure, tMs, value } where value already includes
  * the sentiment sign/source weight. Returns events newest first.
  */
-export function groupEvents(items, ignore) {
+export function groupEvents(items, ignore, opts = {}) {
   const toks = items.map((it) => headlineTokens(it.article.headline, ignore))
   const parent = items.map((_, i) => i)
   const find = (i) => (parent[i] === i ? i : (parent[i] = find(parent[i])))
@@ -119,6 +109,27 @@ export function groupEvents(items, ignore) {
     for (let j = i + 1; j < items.length; j++) {
       if (Math.abs(items[i].tMs - items[j].tMs) <= EVENT_WINDOW_MS && sameEvent(toks[i], toks[j])) parent[find(i)] = find(j)
     }
+  }
+  // Semantic stage: only links groups the lexical rules left apart. 'shadow' computes and logs it without applying it.
+  const mode = opts.semantic ?? config.events.semantic.mode
+  const semanticScore = new Map() // item index -> score of the semantic merge that put it in its event
+  if (mode !== 'off') {
+    const lexicalGroups = new Map()
+    items.forEach((_, i) => lexicalGroups.set(find(i), [...(lexicalGroups.get(find(i)) || []), i]))
+    const p = opts.profile
+    const terms = p ? [...p.people, ...p.supply, ...p.competitors, ...p.sectorTerms] : []
+    const lexical = (i, j) => {
+      let inter = 0
+      for (const t of toks[i]) if (toks[j].has(t)) inter++
+      return { jaccard: +(inter / (toks[i].size + toks[j].size - inter || 1)).toFixed(3), overlap: +(inter / (Math.min(toks[i].size, toks[j].size) || 1)).toFixed(3) }
+    }
+    const log = opts.log ? [] : null
+    const merges = semanticMerges(items, [...lexicalGroups.values()], { terms, ignore, windowMs: EVENT_WINDOW_MS, threshold: opts.threshold, lexical, log })
+    for (const m of merges) {
+      const applied = mode === 'on'
+      if (applied) for (const i of m.members) { parent[find(i)] = find(m.members[0]); semanticScore.set(i, m.score) }
+    }
+    if (log) opts.log.push(...log.map((e) => ({ ...e, applied: e.type === 'semantic-merge' && mode === 'on', mode })))
   }
   const groups = new Map()
   items.forEach((it, i) => groups.set(find(i), [...(groups.get(find(i)) || []), it]))
@@ -141,6 +152,7 @@ export function groupEvents(items, ignore) {
       relevance: Math.max(...members.map((m) => m.exposure.relevance)),
       rep: rep.article,
       tokens: new Set(members.flatMap((m) => [...toks[items.indexOf(m)]])),
+      semantic: members.map((m) => semanticScore.get(items.indexOf(m))).find((x) => x != null) ?? null,
       damp: 1, storyline: null, storyRank: 1
     }
   }).sort((a, b) => b.latestMs - a.latestMs)
