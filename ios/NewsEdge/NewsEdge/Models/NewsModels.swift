@@ -29,6 +29,8 @@ struct Article: Codable, Identifiable, Equatable {
     var storyline: String? = nil
     var storyRank: Int? = nil
     var storyDamp: Double? = nil
+    /// Set when the event was joined by the semantic stage (embedding score of that merge); nil for word-rule events.
+    var semanticScore: Double? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, url, headline, summary, body, source, compound, symbols, channel, storyline, emb
@@ -42,6 +44,7 @@ struct Article: Codable, Identifiable, Equatable {
         case eventOutlets = "event_outlets"
         case storyRank = "story_rank"
         case storyDamp = "story_damp"
+        case semanticScore = "semantic_score"
     }
 }
 

@@ -6,9 +6,18 @@ struct NewsConfig: Decodable {
     struct Events: Decodable {
         struct Lexical: Decodable { let jaccard: Double; let overlap: Double; let minOverlapTokens: Int }
         struct OutletWeight: Decodable { let slope: Double; let cap: Double }
+        struct Semantic: Decodable {
+            struct Weights: Decodable { let semantic: Double; let entity: Double; let time: Double }
+            let mode: String                 // "off" | "shadow" | "on"
+            let threshold: Double
+            let nearMissMargin: Double
+            let weights: Weights
+            let timeSimilarity: [[Double]]   // [[hours, similarity], ...]
+        }
         let windowHours: Double
         let lexical: Lexical
         let outletWeight: OutletWeight
+        let semantic: Semantic
     }
     struct Storylines: Decodable {
         let windowHours: Double, contextDays: Double

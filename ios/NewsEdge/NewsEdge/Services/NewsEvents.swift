@@ -49,6 +49,7 @@ struct NewsEvent {
     let relevance: Double
     let rep: Article           // trusted outlet first, then newest
     let tokens: Set<String>    // informative words of all member headlines (for storyline detection)
+    var semantic: Double? = nil // score of the semantic merge that joined members the word rules kept apart, if any
     var damp: Double = 1       // 1/sqrt(rank) within a bursting storyline, floored; 1 otherwise
     var storyline: String? = nil
     var storyRank: Int = 1
@@ -213,8 +214,10 @@ enum NewsEvents {
 
     // MARK: - Grouping
 
-    /// Groups exposed articles into events (single-link within 48h), newest first.
-    static func groupEvents(_ items: [ExposedArticle], ignore: Set<String>) -> [NewsEvent] {
+    /// Groups exposed articles into events (single-link within 48h), newest first. Then the semantic stage (embeddings; see
+    /// NewsSemantic) may join events the word rules kept apart: `mode` "off" | "shadow" (log only) | "on", default from config.
+    static func groupEvents(_ items: [ExposedArticle], ignore: Set<String>, profile: NewsProfile? = nil, mode: String? = nil,
+                            threshold: Double? = nil, log: ((NewsSemantic.Decision) -> Void)? = nil) -> [NewsEvent] {
         let toks = items.map { headlineTokens($0.article.headline, ignore: ignore) }
         var parent = Array(items.indices)
         func find(_ i: Int) -> Int {
@@ -226,6 +229,26 @@ enum NewsEvents {
             for j in items.indices where j > i {
                 if abs(items[i].time.timeIntervalSince(items[j].time)) <= eventWindow, sameEvent(toks[i], toks[j]) {
                     parent[find(i)] = find(j)
+                }
+            }
+        }
+        // Semantic stage: only links groups the lexical rules left apart. 'shadow' computes and logs it without applying it.
+        let mode = mode ?? NewsConfig.shared.events.semantic.mode
+        var semanticScore: [Int: Double] = [:] // item index -> score of the semantic merge that put it in its event
+        if mode != "off" {
+            var order: [Int] = [], byRoot: [Int: [Int]] = [:] // first-seen order, so ties resolve like the JS Map
+            for i in items.indices { let r = find(i); if byRoot[r] == nil { order.append(r) }; byRoot[r, default: []].append(i) }
+            let terms = profile.map { $0.people + $0.supply + $0.competitors + $0.sectorTerms } ?? []
+            let lexical: (Int, Int) -> (jaccard: Double, overlap: Double)? = { i, j in
+                let inter = Double(toks[i].intersection(toks[j]).count)
+                let jac = inter / Double(max(toks[i].count + toks[j].count - Int(inter), 1)), ov = inter / Double(max(min(toks[i].count, toks[j].count), 1))
+                return (jac, ov)
+            }
+            let found = NewsSemantic.merges(items: items, groups: order.map { byRoot[$0]! }, terms: terms, ignore: ignore, window: eventWindow,
+                                            threshold: threshold, lexical: lexical, log: log.map { sink in { var d = $0; d.applied = d.kind == .merge && mode == "on"; sink(d) } })
+            if mode == "on" {
+                for m in found {
+                    for i in m.members { let a = find(i), b = find(m.members[0]); parent[a] = b; semanticScore[i] = m.score }
                 }
             }
         }
@@ -251,7 +274,8 @@ enum NewsEvents {
                 channel: top.exposure.channel,
                 relevance: members.map(\.exposure.relevance).max()!,
                 rep: rep.article,
-                tokens: idxs.reduce(into: Set<String>()) { $0.formUnion(toks[$1]) }
+                tokens: idxs.reduce(into: Set<String>()) { $0.formUnion(toks[$1]) },
+                semantic: idxs.compactMap { semanticScore[$0] }.first
             )
         }.sorted { $0.latest > $1.latest }
     }
