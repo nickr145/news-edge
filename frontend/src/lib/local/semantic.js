@@ -152,3 +152,73 @@ export function semanticMerges(items, groups, { terms = [], ignore = new Set(), 
   }
   return merges
 }
+
+// ---- semantic storylines ------------------------------------------------------
+const STORY = config.storylines
+const SSEM = STORY.semantic
+
+/** Unit-length mean of the members' embeddings (an event's "meaning"); null if none of them is embedded. */
+export function eventVector(event) {
+  let sum = null, count = 0
+  for (const a of event.articles ?? []) {
+    const v = vectorOf(a)
+    if (!v) continue
+    if (!sum) sum = new Float32Array(v.length)
+    for (let i = 0; i < v.length; i++) sum[i] += v[i]
+    count++
+  }
+  if (!count) return null
+  const norm = Math.hypot(...sum) || 1
+  return sum.map((x) => x / norm)
+}
+
+const lowerBound = (arr, x) => { let lo = 0, hi = arr.length; while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m] < x) lo = m + 1; else hi = m } return lo }
+
+/**
+ * The same burst test as token storylines, with "contains the word" replaced by "means about the same as this event":
+ * for each event, the events within +/-72h whose meaning is close form its story: cosine >= `similarity` AND a shared
+ * entity (amount, person, supplier, capitalised name); with none in common (including headlines that name nothing) it
+ * takes the stricter `noEntityCosine`. Topic alone ("is this stock a buy?") is not a story, and two people who merely
+ * share a surname (Alice Huang, Jensen Huang) are not one.
+ * It is a storyline if that group is big enough, a big enough share of the events in the window, and several times
+ * denser there than elsewhere (steady coverage such as earnings season is not a burst). Anchored per event, never
+ * chained. Returns, per event index, { rank, local, label, similar } or null. `exclude` = token stoplist, for the label only.
+ */
+export function semanticStorylines(events, { windowMs, terms = [], ignore = new Set(), exclude = new Set(), similarity = SSEM.similarity, noEntityCosine = SSEM.no_shared_entity_cosine } = {}) {
+  const idx = events.map((_, i) => i).filter((i) => eventVector(events[i]))
+  const out = new Array(events.length).fill(null)
+  const n = idx.length
+  if (n < STORY.min_events) return out
+  const vec = new Map(idx.map((i) => [i, eventVector(events[i])]))
+  const ents = new Map(idx.map((i) => [i, new Set(events[i].articles.flatMap((a) => [...entitiesOf(a.headline, terms, ignore)]))]))
+  const order = [...idx].sort((a, b) => events[a].tMs - events[b].tMs || a - b)
+  const times = order.map((i) => events[i].tMs)
+  for (const i of idx) {
+    const lo = lowerBound(times, events[i].tMs - windowMs), hi = lowerBound(times, events[i].tMs + windowMs + 1)
+    const nbr = hi - lo, outsideN = n - nbr
+    const hasBaseline = outsideN >= STORY.min_outside
+    const [minLocal, minRate] = hasBaseline ? [STORY.min_local, STORY.min_rate] : [STORY.no_baseline_local, STORY.no_baseline_rate]
+    let local = 1, outside = 0, earlier = 0
+    const similar = []
+    for (const j of idx) {
+      if (j === i) continue
+      const cos = cosine(vec.get(i), vec.get(j))
+      if (cos < similarity) continue
+      const es = entitySimilarity(ents.get(i), ents.get(j))
+      if (!es && cos < noEntityCosine) continue // a story needs a named anchor in common (Alice Huang is not Jensen Huang), or near-identical meaning
+      const dt = events[j].tMs - events[i].tMs
+      if (Math.abs(dt) <= windowMs) {
+        local++
+        similar.push(j)
+        if (dt < 0 || (dt === 0 && j < i)) earlier++
+      } else outside++
+    }
+    if (local < minLocal || local / nbr < minRate) continue
+    if (hasBaseline && (local / nbr) / (outside / outsideN + 0.02) < STORY.min_burst) continue
+    const counts = new Map() // label: the commonest informative word of the story
+    for (const j of [i, ...similar]) for (const t of events[j].tokens) if (!exclude.has(t)) counts.set(t, (counts.get(t) || 0) + 1)
+    const label = [...counts].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0]?.[0] ?? 'related coverage'
+    out[i] = { rank: 1 + earlier, local, label, similar }
+  }
+  return out
+}

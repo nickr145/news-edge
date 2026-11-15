@@ -26,7 +26,9 @@ export function createLocalApi({
   now = () => new Date(),
   embedder = (typeof window === 'undefined' ? null : createEmbedder()), // tests and SSR never download the model
   semanticMode, // 'off' | 'shadow' | 'on'; default: events.semantic.mode in data/news_config.json
-  semanticThreshold // default: events.semantic.threshold (only evaluation overrides it)
+  semanticThreshold, // default: events.semantic.threshold (only evaluation overrides it)
+  storylineMode, // 'off' | 'shadow' | 'on'; default: storylines.semantic.mode
+  storylineSimilarity // default: storylines.semantic.similarity (only evaluation overrides it)
 } = {}) {
   const src = createSources({ fetchImpl, storage })
   const newsKey = (t) => `newsedge_news_v1_${A.yahooSymbol(t)}`
@@ -107,10 +109,11 @@ export function createLocalApi({
       if (!exposure || exposure.relevance < minRelevance) continue
       items.push({ article: a, exposure, tMs, value: a.compound * (a.source_weight ?? 1) * exposure.sign })
     }
-    const log = []
-    const grouped = N.groupEvents(items, N.ignoreTokens(profile), { profile, log, semantic: semanticMode, threshold: semanticThreshold })
+    const log = [], ignore = N.ignoreTokens(profile)
+    const grouped = N.groupEvents(items, ignore, { profile, log, semantic: semanticMode, threshold: semanticThreshold })
+    const damped = N.dampStorylines(grouped, N.storylineExclusions(profile), { profile, ignore, log, semantic: storylineMode, similarity: storylineSimilarity })
     decisions.set(A.yahooSymbol(ticker), log)
-    return N.dampStorylines(grouped, N.storylineExclusions(profile)).filter((e) => e.tMs >= sinceMs)
+    return damped.filter((e) => e.tMs >= sinceMs)
   }
 
   const withoutEmb = ({ emb, ...rest }) => rest // embeddings stay in the cache, never in what the UI receives

@@ -4,7 +4,7 @@ import profiles from '../../data/newsProfiles.json'
 import background from '../../data/newsBackground.json'
 import config from '../../data/newsConfig.json'
 import * as A from './analytics'
-import { semanticMerges } from './semantic'
+import { semanticMerges, semanticStorylines } from './semantic'
 import { hasTerm, headlineTokens, stem } from './tokens'
 
 const HOUR = 3_600_000
@@ -193,7 +193,7 @@ const lowerBound = (arr, x) => { let lo = 0, hi = arr.length; while (lo < hi) { 
  * the pile-on counts for progressively less. Returns the same events with `damp`, `storyline`, `storyRank`, and the
  * damped `weight`. `exclude`: see storylineExclusions. Needs >= 30 events of context to tell a burst from vocabulary.
  */
-export function dampStorylines(events, exclude = new Set()) {
+export function dampStorylines(events, exclude = new Set(), opts = {}) {
   const n = events.length
   if (n < STORY.minEvents) return events
   const order = events.map((_, i) => i).sort((a, b) => events[a].tMs - events[b].tMs || a - b)
@@ -225,7 +225,31 @@ export function dampStorylines(events, exclude = new Set()) {
     const damp = Math.max(STORY.floor, 1 / Math.sqrt(rank))
     out[i].damp = damp; out[i].storyline = best.token; out[i].storyRank = rank; out[i].weight = e.weight * damp
   })
+  semanticStage(events, out, exclude, opts)
   return out
+}
+
+/**
+ * Storylines that share no keyword ("CEO resigns" / "chief steps down" / "who replaces him?") but mean the same thing.
+ * An event takes the semantic story only when it ranks it later than the word-based storyline did (never less damping
+ * than before). 'shadow' (default) logs what it would change; 'on' applies it; 'off' skips it.
+ */
+function semanticStage(events, out, exclude, { semantic, profile, ignore, log, similarity } = {}) {
+  const mode = semantic ?? config.storylines.semantic.mode
+  if (mode === 'off') return
+  const terms = profile ? [...profile.people, ...profile.supply, ...profile.competitors, ...profile.sectorTerms] : []
+  const found = semanticStorylines(events, { windowMs: STORY_WINDOW_MS, terms, ignore, exclude, ...(similarity != null && { similarity }) })
+  found.forEach((s, i) => {
+    if (!s) return
+    const tokenRank = out[i].storyline ? out[i].storyRank : 0
+    if (s.rank <= tokenRank || s.rank < 2) return // the word-based storyline already covers it, or it is the first piece
+    const damp = Math.max(STORY.floor, 1 / Math.sqrt(s.rank))
+    if (damp >= out[i].damp) return
+    log?.push({ type: 'semantic-storyline', applied: mode === 'on', mode, headline: events[i].rep.headline, label: s.label, rank: s.rank, local: s.local, tokenRank,
+      damp: +damp.toFixed(3), tokenDamp: +out[i].damp.toFixed(3), related: s.similar.slice(0, 3).map((j) => events[j].rep.headline) })
+    if (mode !== 'on') return
+    out[i].damp = damp; out[i].storyline = s.label; out[i].storyRank = s.rank; out[i].storyKind = 'semantic'; out[i].weight = events[i].weight * damp
+  })
 }
 
 // ---- searches that find the indirect news ----------------------------------
