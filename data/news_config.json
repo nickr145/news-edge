@@ -12,8 +12,8 @@
       "cap": 2.5
     },
     "semantic": {
-      "mode": "shadow",
-      "threshold": 0.88,
+      "mode": "on",
+      "threshold": 0.9,
       "near_miss_margin": 0.08,
       "weights": {
         "semantic": 0.65,

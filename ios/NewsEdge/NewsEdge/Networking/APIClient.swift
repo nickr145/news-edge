@@ -37,6 +37,7 @@ final class APIClient {
                 a.storyline = e.storyline
                 a.storyRank = e.storyRank
                 a.storyDamp = (e.damp * 10_000).rounded() / 10_000
+                a.semanticScore = e.semantic.map { ($0 * 10_000).rounded() / 10_000 }
                 return a
             }
     }
@@ -116,6 +117,17 @@ final class APIClient {
         )
     }
 
+    // MARK: - Explainability
+
+    private let decisionLock = NSLock()
+    private var lastDecisions: [String: [NewsSemantic.Decision]] = [:]
+
+    /// The semantic merges and near misses behind the last grouping of `ticker` (the iOS twin of `newsedge.api.debug.decisions`).
+    func decisions(ticker: String) -> [NewsSemantic.Decision] {
+        decisionLock.lock(); defer { decisionLock.unlock() }
+        return lastDecisions[ticker.uppercased()] ?? []
+    }
+
     // MARK: - Helpers
 
     private func daysAgo(_ days: Double) -> Date { now().addingTimeInterval(-days * 86_400) }
@@ -141,7 +153,9 @@ final class APIClient {
                   ex.relevance >= minRelevance else { continue }
             items.append(ExposedArticle(article: a, exposure: ex, time: a.publishedAt, value: (a.compound ?? 0) * (a.sourceWeight ?? 1) * ex.sign))
         }
-        let grouped = NewsEvents.groupEvents(items, ignore: NewsEvents.ignoreTokens(profile))
+        var log: [NewsSemantic.Decision] = []
+        let grouped = NewsEvents.groupEvents(items, ignore: NewsEvents.ignoreTokens(profile), profile: profile, log: { log.append($0) })
+        decisionLock.lock(); lastDecisions[profile.ticker] = log; decisionLock.unlock()
         return NewsEvents.dampStorylines(grouped, exclude: NewsEvents.storylineExclusions(profile)).filter { $0.time >= since }
     }
 }
