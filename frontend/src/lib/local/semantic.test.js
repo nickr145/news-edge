@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { entitiesOf, entitySimilarity, pairScore, semanticMerges, timeSimilarity } from './semantic'
-import { groupEvents } from './news'
+import { entitiesOf, entitySimilarity, eventVector, pairScore, semanticMerges, semanticStorylines, timeSimilarity } from './semantic'
+import { dampStorylines, groupEvents, STORY_WINDOW_MS } from './news'
 import { quantize } from './embeddings'
 
 const H = 3_600_000
@@ -114,5 +114,79 @@ describe('groupEvents with the semantic stage', () => {
   it('articles without embeddings group exactly as before, in every mode', () => {
     const plain = items().map((it) => ({ ...it, article: { ...it.article, emb: undefined } }))
     for (const mode of ['off', 'shadow', 'on']) expect(groupEvents(plain, new Set(), opts(mode)).length).toBe(2)
+  })
+})
+
+describe('semantic storylines', () => {
+  const NOW = Date.parse('2026-11-12T12:00:00Z'), DIM = 64
+  const basis = (k, ...extra) => { const v = new Array(DIM).fill(0); v[k] = 1; extra.forEach(([j, x]) => { v[j] = x }); return v }
+  const words = (headline) => new Set(headline.toLowerCase().split(/\s+/))
+  const ev = (i, hoursAgo, headline, vec) => ({
+    id: i, articles: [{ id: i, headline, emb: quantize(vec) }], rep: { headline }, tMs: NOW - hoursAgo * H, tokens: words(headline),
+    weight: 1, damp: 1, storyline: null, storyRank: 1
+  })
+  // 40 ordinary events, 4-24 days old, each about something different (orthogonal meanings)
+  const ordinary = () => Array.from({ length: 40 }, (_, i) => ev(i, 96 + i * 12, `alpha${i} beta${i}`, basis(i)))
+  // a developing story over 44h whose headlines share no words, only meaning
+  const story = (k = 12, headline = (i) => `gamma${i} delta${i}`) =>
+    Array.from({ length: k }, (_, i) => ev(100 + i, 1 + 4 * i, headline(i), basis(50, [51 + (i % 10), 0.05 * (i + 1)])))
+  const opts = (extra = {}) => ({ windowMs: STORY_WINDOW_MS, ...extra })
+
+  it('an event vector is the unit-length mean of its members, null without embeddings', () => {
+    const v = eventVector({ articles: [{ emb: quantize(unit(1, 0)) }, { emb: quantize(unit(0, 1)) }] })
+    expect(Math.hypot(...v)).toBeCloseTo(1, 5)
+    expect(v[0]).toBeCloseTo(v[1], 2)
+    expect(eventVector({ articles: [{}] })).toBeNull()
+  })
+
+  it('finds a storyline whose events share no words, ranking them earliest first', () => {
+    const events = [...ordinary(), ...story()]
+    const found = semanticStorylines(events, opts())
+    const ranks = found.slice(40).map((s) => s?.rank).sort((a, b) => a - b)
+    expect(ranks).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
+    expect(found.slice(0, 40).every((s) => s === null)).toBe(true) // ordinary events are not a story
+  })
+
+  it('needs context and a burst: too few events, or steady coverage over the whole month, is not a storyline', () => {
+    expect(semanticStorylines(story(12), opts()).every((s) => s === null)).toBe(true)
+    const steady = Array.from({ length: 60 }, (_, i) => ev(i, 6 + i * 11, `w${i} x${i}`, i % 3 === 0 ? basis(50, [51 + (i % 10), 0.05]) : basis(i)))
+    expect(semanticStorylines(steady, opts()).every((s) => s === null)).toBe(true)
+  })
+
+  it('does not tie two different people with the same surname into one story', () => {
+    const jensen = Array.from({ length: 4 }, (_, i) => ev(200 + i, 1 + 3 * i, `Chip chief Jensen Huang resigns ${i}`, basis(50, [51, 0.1 * i])))
+    const alice = Array.from({ length: 4 }, (_, i) => ev(300 + i, 2 + 3 * i, `Rival hires Alice Huang as chief ${i}`, basis(52, [50, 0.7 + 0.05 * i]))) // cos ~0.6 across groups
+    const events = [...ordinary(), ...jensen, ...alice]
+    const separate = semanticStorylines(events, opts({ similarity: 0.5, noEntityCosine: 0.7 }))
+    const lumped = semanticStorylines(events, opts({ similarity: 0.5, noEntityCosine: 0 }))
+    expect(separate[40].local).toBe(4)
+    expect(lumped[40].local).toBe(8)
+  })
+
+  describe('in dampStorylines', () => {
+    const run = (events, semantic, log) => dampStorylines(events, new Set(), { semantic, log })
+    it("'shadow' (default) only logs, 'on' damps the k-th piece by 1/sqrt(k), 'off' does nothing", () => {
+      const events = () => [...ordinary(), ...story()]
+      const log = []
+      const shadow = run(events(), 'shadow', log)
+      expect(shadow.every((e) => e.damp === 1 && e.storyline === null)).toBe(true)
+      expect(log.length).toBeGreaterThan(0)
+      expect(log[0]).toMatchObject({ type: 'semantic-storyline', applied: false, mode: 'shadow' })
+      expect(run(events(), 'off').every((e) => e.damp === 1)).toBe(true)
+      const on = run(events(), 'on')
+      const s = on.filter((e) => e.storyKind === 'semantic').sort((a, b) => a.storyRank - b.storyRank)
+      expect(s.map((e) => e.storyRank)).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]) // first piece is never damped
+      expect(s[2].damp).toBeCloseTo(0.5, 12) // 4th piece
+      s.forEach((e) => expect(e.weight).toBeCloseTo(e.damp, 12))
+      expect(on.filter((e) => e.storyKind !== 'semantic').every((e) => e.damp === 1)).toBe(true)
+    })
+    it('never damps less than the word-based storyline already does', () => {
+      const log = []
+      const out = run([...ordinary(), ...story(12, (i) => `zorblax gamma${i} delta${i}`)], 'on', log)
+      const token = out.filter((e) => e.storyline === 'zorblax')
+      expect(token.length).toBe(12)
+      expect(token.every((e) => e.storyKind === undefined)).toBe(true)
+      expect(log).toEqual([])
+    })
   })
 })

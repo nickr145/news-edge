@@ -46,7 +46,12 @@
     "min_burst": 3,
     "min_outside": 20,
     "no_baseline_local": 6,
-    "no_baseline_rate": 0.15
+    "no_baseline_rate": 0.15,
+    "semantic": {
+      "mode": "shadow",
+      "similarity": 0.55,
+      "no_shared_entity_cosine": 0.75
+    }
   },
   "embedding": {
     "model": "all-MiniLM-L6-v2",

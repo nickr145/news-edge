@@ -1,5 +1,5 @@
 // Shadow evaluation on LIVE news (needs network + the real model; skipped otherwise):
-//   SHADOW=1 [SHADOW_TICKERS=AAPL,NVDA] [SHADOW_THRESHOLD=0.5] [SHADOW_OUT=/path/report.json] npx vitest run semantic.shadow
+//   SHADOW=1 [SHADOW_TICKERS=AAPL,NVDA] [SHADOW_THRESHOLD=0.5] [SHADOW_SIMILARITY=0.5] [SHADOW_OUT=/path/report.json] npx vitest run semantic.shadow
 // For each ticker it groups the same cached articles twice, lexical-only and lexical+semantic, and writes what the
 // semantic stage merged or nearly merged (with cosine, entity, time and score), so thresholds can be judged on real headlines.
 import { describe, it } from 'vitest'
@@ -21,6 +21,7 @@ describe.runIf(process.env.SHADOW)('semantic event grouping on live news', () =>
   it('reports lexical vs semantic grouping', async () => {
     const tickers = (process.env.SHADOW_TICKERS || 'AAPL,NVDA,TSLA,META,MSFT,AMZN,GOOGL,JPM,BA,INTC,PFE,XOM').split(',')
     const threshold = process.env.SHADOW_THRESHOLD ? Number(process.env.SHADOW_THRESHOLD) : undefined
+    const simThreshold = process.env.SHADOW_SIMILARITY ? Number(process.env.SHADOW_SIMILARITY) : undefined
     const embedder = createEmbedder()
     const report = []
     for (const t of tickers) {
@@ -35,12 +36,14 @@ describe.runIf(process.env.SHADOW)('semantic event grouping on live news', () =>
       }
       const cached = JSON.parse(storage.getItem(`newsedge_news_v1_${t}`) || '[]')
       const off = createLocalApi({ fetchImpl: offline, storage, embedder: null, semanticMode: 'off' })
-      const on = createLocalApi({ fetchImpl: offline, storage, embedder: null, semanticMode: 'on', semanticThreshold: threshold })
+      const on = createLocalApi({ fetchImpl: offline, storage, embedder: null, semanticMode: 'on', semanticThreshold: threshold, storylineMode: 'on', storylineSimilarity: simThreshold })
       const eventsOff = (await off.get(`/api/news/${t}`, { params })).data
+      const stories = (e) => e.filter((x) => x.story_damp < 1).length
       const eventsOn = (await on.get(`/api/news/${t}`, { params })).data
       const log = on.debug.decisions(t)
       report.push({ ticker: t, articles: cached.length, embedded: cached.filter((x) => x.emb).length, eventsLexical: eventsOff.length, eventsSemantic: eventsOn.length,
-        merges: log.filter((e) => e.type === 'semantic-merge'), nearMisses: log.filter((e) => e.type === 'near-miss') })
+        merges: log.filter((e) => e.type === 'semantic-merge'), nearMisses: log.filter((e) => e.type === 'near-miss'),
+        dampedLexical: stories(eventsOff), dampedSemantic: stories(eventsOn), storylines: log.filter((e) => e.type === 'semantic-storyline') })
     }
     writeFileSync(process.env.SHADOW_OUT || '/tmp/shadow-report.json', JSON.stringify(report, null, 1))
   }, 1_200_000)
