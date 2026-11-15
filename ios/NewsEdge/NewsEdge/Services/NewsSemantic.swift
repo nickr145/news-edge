@@ -183,4 +183,86 @@ enum NewsSemantic {
         }
         return out
     }
+
+    // MARK: - Storylines
+
+    /// One storyline decision in `shadow` or `on` mode (the on-device counterpart of the `semantic-storyline` log entries on web).
+    struct StoryDecision: Equatable {
+        let headline: String, label: String
+        let rank: Int, local: Int, tokenRank: Int
+        let damp: Double, tokenDamp: Double
+        let related: [String]
+        let applied: Bool
+        let mode: String
+    }
+
+    struct Story { let rank: Int; let local: Int; let label: String; let similar: [Int] }
+
+    /// Unit-length mean of the members' embeddings (an event's "meaning"); nil if none of them is embedded.
+    static func eventVector(_ event: NewsEvent) -> [Float]? {
+        var sum: [Float]?
+        var count = 0
+        for a in event.articles {
+            guard let v = vector(of: a) else { continue }
+            if sum == nil { sum = [Float](repeating: 0, count: v.count) }
+            guard sum!.count == v.count else { continue }
+            for i in v.indices { sum![i] += v[i] }
+            count += 1
+        }
+        guard count > 0, let s = sum else { return nil }
+        let norm = s.reduce(0) { $0 + $1 * $1 }.squareRoot()
+        return s.map { $0 / (norm > 0 ? norm : 1) }
+    }
+
+    private static func lowerBound(_ a: [TimeInterval], _ x: TimeInterval) -> Int {
+        var lo = 0, hi = a.count
+        while lo < hi { let m = (lo + hi) / 2; if a[m] < x { lo = m + 1 } else { hi = m } }
+        return lo
+    }
+
+    /// The same burst test as token storylines, with "contains the word" replaced by "means about the same as this event": for each
+    /// event, the events within +/-`window` whose meaning is close (cosine >= `similarity` AND a shared entity; with none in common, the
+    /// stricter `noSharedEntityCosine`) form its story. It is a storyline if big enough, a big enough share of the window and several
+    /// times denser there than elsewhere. Anchored per event, never chained. Mirrors semanticStorylines in semantic.js.
+    static func storylines(_ events: [NewsEvent], window: TimeInterval, terms: [String] = [], ignore: Set<String> = [], exclude: Set<String> = [],
+                           similarity: Double? = nil, noEntityCosine: Double? = nil) -> [Story?] {
+        let sl = NewsConfig.shared.storylines
+        let similarity = similarity ?? sl.semantic.similarity, noEntityCosine = noEntityCosine ?? sl.semantic.noSharedEntityCosine
+        var out = [Story?](repeating: nil, count: events.count)
+        var vec: [Int: [Float]] = [:]
+        for i in events.indices { if let v = eventVector(events[i]) { vec[i] = v } }
+        let idx = events.indices.filter { vec[$0] != nil }
+        let n = idx.count
+        guard n >= sl.minEvents else { return out }
+        var ents: [Int: Set<String>] = [:]
+        for i in idx { ents[i] = events[i].articles.reduce(into: Set<String>()) { $0.formUnion(entities(of: $1.headline, terms: terms, ignore: ignore)) } }
+        let t = events.map { $0.time.timeIntervalSince1970 }
+        let times = idx.sorted { t[$0] != t[$1] ? t[$0] < t[$1] : $0 < $1 }.map { t[$0] }
+        for i in idx {
+            let nbr = lowerBound(times, t[i] + window + 0.001) - lowerBound(times, t[i] - window), outsideN = n - nbr
+            let hasBaseline = outsideN >= sl.minOutside
+            let minLocal = hasBaseline ? sl.minLocal : sl.noBaselineLocal, minRate = hasBaseline ? sl.minRate : sl.noBaselineRate
+            var local = 1, outside = 0, earlier = 0
+            var similar: [Int] = []
+            for j in idx where j != i {
+                let cos = EmbeddingCodec.cosine(vec[i]!, vec[j]!)
+                if cos < similarity { continue }
+                let es = entitySimilarity(ents[i]!, ents[j]!) ?? 0
+                if es == 0 && cos < noEntityCosine { continue } // a story needs a named anchor in common, or near-identical meaning
+                let dt = t[j] - t[i]
+                if abs(dt) <= window {
+                    local += 1
+                    similar.append(j)
+                    if dt < 0 || (dt == 0 && j < i) { earlier += 1 }
+                } else { outside += 1 }
+            }
+            if local < minLocal || Double(local) / Double(nbr) < minRate { continue }
+            if hasBaseline, (Double(local) / Double(nbr)) / (Double(outside) / Double(outsideN) + 0.02) < sl.minBurst { continue }
+            var counts: [String: Int] = [:] // label: the commonest informative word of the story
+            for j in [i] + similar { for tok in events[j].tokens where !exclude.contains(tok) { counts[tok, default: 0] += 1 } }
+            let label = counts.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }.first?.key ?? "related coverage"
+            out[i] = Story(rank: 1 + earlier, local: local, label: label, similar: similar)
+        }
+        return out
+    }
 }

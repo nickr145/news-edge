@@ -121,11 +121,18 @@ final class APIClient {
 
     private let decisionLock = NSLock()
     private var lastDecisions: [String: [NewsSemantic.Decision]] = [:]
+    private var lastStoryDecisions: [String: [NewsSemantic.StoryDecision]] = [:]
 
     /// The semantic merges and near misses behind the last grouping of `ticker` (the iOS twin of `newsedge.api.debug.decisions`).
     func decisions(ticker: String) -> [NewsSemantic.Decision] {
         decisionLock.lock(); defer { decisionLock.unlock() }
         return lastDecisions[ticker.uppercased()] ?? []
+    }
+
+    /// The semantic storyline changes (applied or, in shadow mode, only proposed) behind the last grouping of `ticker`.
+    func storyDecisions(ticker: String) -> [NewsSemantic.StoryDecision] {
+        decisionLock.lock(); defer { decisionLock.unlock() }
+        return lastStoryDecisions[ticker.uppercased()] ?? []
     }
 
     // MARK: - Helpers
@@ -153,9 +160,11 @@ final class APIClient {
                   ex.relevance >= minRelevance else { continue }
             items.append(ExposedArticle(article: a, exposure: ex, time: a.publishedAt, value: (a.compound ?? 0) * (a.sourceWeight ?? 1) * ex.sign))
         }
-        var log: [NewsSemantic.Decision] = []
-        let grouped = NewsEvents.groupEvents(items, ignore: NewsEvents.ignoreTokens(profile), profile: profile, log: { log.append($0) })
-        decisionLock.lock(); lastDecisions[profile.ticker] = log; decisionLock.unlock()
-        return NewsEvents.dampStorylines(grouped, exclude: NewsEvents.storylineExclusions(profile)).filter { $0.time >= since }
+        var log: [NewsSemantic.Decision] = [], storyLog: [NewsSemantic.StoryDecision] = []
+        let ignore = NewsEvents.ignoreTokens(profile)
+        let grouped = NewsEvents.groupEvents(items, ignore: ignore, profile: profile, log: { log.append($0) })
+        let damped = NewsEvents.dampStorylines(grouped, exclude: NewsEvents.storylineExclusions(profile), profile: profile, ignore: ignore, log: { storyLog.append($0) })
+        decisionLock.lock(); lastDecisions[profile.ticker] = log; lastStoryDecisions[profile.ticker] = storyLog; decisionLock.unlock()
+        return damped.filter { $0.time >= since }
     }
 }
