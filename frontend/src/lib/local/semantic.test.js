@@ -165,7 +165,7 @@ describe('semantic storylines', () => {
 
   describe('in dampStorylines', () => {
     const run = (events, semantic, log) => dampStorylines(events, new Set(), { semantic, log })
-    it("'shadow' (default) only logs, 'on' damps the k-th piece by 1/sqrt(k), 'off' does nothing", () => {
+    it("'shadow' only logs, 'on' damps the k-th piece by 1/sqrt(k), 'off' does nothing", () => {
       const events = () => [...ordinary(), ...story()]
       const log = []
       const shadow = run(events(), 'shadow', log)
