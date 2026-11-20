@@ -334,6 +334,41 @@ describe('indirect candidates', () => {
     await api.get('/api/news/NVDA', { params: { days: 30 } })
     expect(cached(storage).filter((a) => a.cand).map((a) => a.headline)).toEqual(['Local bakery wins award']) // newest of the two
   })
+
+  // 5 axes: people, supply, sector, competitor, macro. Anchor text picks its axis; MISS is "supplier-ish"; everything else is the zero vector.
+  const AXIS = [/leadership and executives/, /suppliers, customers and supply chain/, /industry and sector news/, /competitors and rivals/, /policy, regulation, trade and economy/]
+  const vecOf = (t) => {
+    const i = AXIS.findIndex((re) => re.test(t))
+    if (i >= 0) return Array.from({ length: 5 }, (_, k) => (k === i ? 1 : 0))
+    return t.includes('Earthquake') ? [0, 0.9, 0.2, 0, 0] : [0, 0, 0, 0, 0]
+  }
+  const fakeEmbedder = () => ({ embed: vi.fn(async (texts) => texts.map(vecOf)) })
+  const anchorItem = (storage) => JSON.parse(storage.getItem('newsedge_anchors_v1_NVDA') || 'null')
+
+  it('embeds the anchors once and caches them by text and model', async () => {
+    const embedder = fakeEmbedder()
+    const { api, storage } = setup({ indirectMode: 'shadow', embedder })
+    await api.get('/api/news/NVDA', { params: { days: 30 } })
+    await vi.waitFor(() => expect(anchorItem(storage)).not.toBeNull())
+    const a = anchorItem(storage)
+    expect(a.embs.length).toBeGreaterThanOrEqual(5)
+    expect(JSON.parse(a.key)[1].some((t) => t.includes('suppliers, customers and supply chain'))).toBe(true)
+
+    const again = fakeEmbedder() // a new session on the same storage must not re-embed the anchors
+    const second = createLocalApi({ fetchImpl: net({ search: { body: direct }, gnews: 'down', gsearch: { body: gsearchRSS } }), storage, score, companyName: () => 'NVIDIA Corporation', now: () => NOW,
+      indirectMode: 'shadow', indirectThreshold: 0.6, indirectMargin: 0.2, embedder: again })
+    await second.get('/api/news/NVDA', { params: { days: 30 } })
+    await vi.waitFor(() => expect(cached(storage).every((x) => x.emb)).toBe(true))
+    expect(again.embed.mock.calls.flat(2).some((t) => t.includes('suppliers, customers and supply chain'))).toBe(false)
+  })
+  it('does not embed anchors when the mode is off or the threshold is unset', async () => {
+    for (const extra of [{ indirectMode: 'off' }, { indirectThreshold: null }]) {
+      const { api, storage } = setup({ embedder: fakeEmbedder(), ...extra })
+      await api.get('/api/news/NVDA', { params: { days: 30 } })
+      await vi.waitFor(() => expect(cached(storage).every((x) => x.emb)).toBe(true))
+      expect(anchorItem(storage)).toBeNull()
+    }
+  })
 })
 
 // ---- storylines through the API ---------------------------------------------

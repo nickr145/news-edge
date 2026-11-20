@@ -5,7 +5,8 @@ import * as A from './analytics'
 import * as N from './news'
 import config from '../../data/newsConfig.json'
 import { createSources } from './sources'
-import { createEmbedder, embeddingText, quantize } from './embeddings'
+import { createEmbedder, dequantize, embeddingText, quantize } from './embeddings'
+import { anchorTexts } from './indirect'
 
 const RETENTION_MS = 90 * 86_400_000
 const DAY_MS = 86_400_000
@@ -89,10 +90,33 @@ export function createLocalApi({
    * relevance never re-embeds. Fire-and-forget; articles without one are simply grouped lexically. Storage is re-read
    * after the await so articles saved meanwhile are not overwritten.
    */
+  const anchorStoreKey = (t) => `newsedge_anchors_v1_${A.yahooSymbol(t)}`
+  const anchorsReady = new Map() // symbol -> [{ channel, vec }]: indirect.js anchors with their vectors, once embedded
+
+  /** Embeds a ticker's anchor sentences once ever (cached by text + model); a no-op while the feature is inactive. */
+  async function ensureAnchors(ticker) {
+    const sym = A.yahooSymbol(ticker)
+    if (!indirectActive || anchorsReady.has(sym)) return
+    const texts = anchorTexts(profileOf(ticker))
+    if (!texts.length) return
+    const key = JSON.stringify([config.embedding.model, texts.map((x) => x.text)])
+    let stored = null
+    try { stored = JSON.parse(storage.getItem(anchorStoreKey(ticker)) || 'null') } catch { /* unreadable: re-embed */ }
+    let embs = stored?.key === key ? stored.embs : null
+    if (!embs) {
+      const vecs = await embedder.embed(texts.map((x) => x.text))
+      if (!vecs) return // model unavailable: try again on the next pass
+      embs = vecs.map(quantize)
+      try { storage.setItem(anchorStoreKey(ticker), JSON.stringify({ key, embs })) } catch { /* quota */ }
+    }
+    anchorsReady.set(sym, texts.map((x, i) => ({ channel: x.channel, vec: dequantize(embs[i]) })))
+  }
+
   let embedding = Promise.resolve()
   function embedMissing(ticker) {
     if (!embedder) return
     embedding = embedding.then(async () => {
+      await ensureAnchors(ticker).catch(() => {}) // anchors first, but never let them block the articles
       const todo = loadNews(ticker).filter((a) => !a.emb)
       if (!todo.length) return
       const vecs = await embedder.embed(todo.map((a) => embeddingText(a.headline, companyName(ticker))))
