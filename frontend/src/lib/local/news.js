@@ -2,24 +2,16 @@
 // both load the same curated data (data/news_profiles.json, synced by scripts/sync_news_profiles.py).
 import profiles from '../../data/newsProfiles.json'
 import background from '../../data/newsBackground.json'
+import config from '../../data/newsConfig.json'
 import * as A from './analytics'
-import { headlineTokens, stem } from './tokens'
+import { semanticMerges, semanticStorylines } from './semantic'
+import { hasTerm, headlineTokens, stem } from './tokens'
 
 const HOUR = 3_600_000
-export const EVENT_WINDOW_MS = 48 * HOUR
+const { events: EV, storylines: SL } = config
+export const EVENT_WINDOW_MS = EV.window_hours * HOUR
 const GENERIC_FIRST_WORDS = new Set(['general', 'united', 'american', 'first', 'national', 'international', 'global', 'southern', 'western', 'eastern', 'northern', 'pacific', 'great', 'new', 'bank'])
 const SUFFIXES = /\b(inc|corp|corporation|co|company|ltd|plc|holdings|group|incorporated|class [a-c]|the)\b\.?/g
-
-/** Whole-term match (term bounded by non-alphanumerics), no regex so Swift can mirror it exactly. */
-export function hasTerm(text, term) {
-  let i = text.indexOf(term)
-  while (i !== -1) {
-    const before = i === 0 ? '' : text[i - 1], after = text[i + term.length] ?? ''
-    if (!/[a-z0-9]/.test(before) && !/[a-z0-9]/.test(after)) return true
-    i = text.indexOf(term, i + 1)
-  }
-  return false
-}
 
 const cleanName = (name) => name.toLowerCase().replace(/&/g, ' and ').replace(SUFFIXES, ' ').replace(/[.,]/g, ' ').replace(/\s+/g, ' ').trim()
 
@@ -82,7 +74,7 @@ export function exposureOf(profile, headline, symbols = []) {
 }
 
 // ---- headline tokens: see tokens.js
-export { headlineTokens } from './tokens'
+export { hasTerm, headlineTokens } from './tokens'
 
 /** Words belonging to the company itself (every headline has them, so they say nothing about *which* event). */
 export function ignoreTokens(profile) {
@@ -99,17 +91,17 @@ export function sameEvent(a, b) {
   if (inter < 2) return false
   const jaccard = inter / (a.size + b.size - inter)
   const overlap = inter / Math.min(a.size, b.size)
-  return jaccard >= 0.5 || (overlap >= 0.75 && inter >= 3)
+  return jaccard >= EV.lexical.jaccard || (overlap >= EV.lexical.overlap && inter >= EV.lexical.min_overlap_tokens)
 }
 
 /** One event's weight: 1 for a single outlet, +0.5*ln(outlets) beyond that, capped (echo != importance, breadth != nothing). */
-export const coverageBoost = (outlets) => Math.min(2.5, 1 + 0.5 * Math.log(Math.max(outlets, 1)))
+export const coverageBoost = (outlets) => Math.min(EV.outlet_weight.cap, 1 + EV.outlet_weight.slope * Math.log(Math.max(outlets, 1)))
 
 /**
  * Groups exposed articles into events. `items`: { article, exposure, tMs, value } where value already includes
  * the sentiment sign/source weight. Returns events newest first.
  */
-export function groupEvents(items, ignore) {
+export function groupEvents(items, ignore, opts = {}) {
   const toks = items.map((it) => headlineTokens(it.article.headline, ignore))
   const parent = items.map((_, i) => i)
   const find = (i) => (parent[i] === i ? i : (parent[i] = find(parent[i])))
@@ -117,6 +109,27 @@ export function groupEvents(items, ignore) {
     for (let j = i + 1; j < items.length; j++) {
       if (Math.abs(items[i].tMs - items[j].tMs) <= EVENT_WINDOW_MS && sameEvent(toks[i], toks[j])) parent[find(i)] = find(j)
     }
+  }
+  // Semantic stage: only links groups the lexical rules left apart. 'shadow' computes and logs it without applying it.
+  const mode = opts.semantic ?? config.events.semantic.mode
+  const semanticScore = new Map() // item index -> score of the semantic merge that put it in its event
+  if (mode !== 'off') {
+    const lexicalGroups = new Map()
+    items.forEach((_, i) => lexicalGroups.set(find(i), [...(lexicalGroups.get(find(i)) || []), i]))
+    const p = opts.profile
+    const terms = p ? [...p.people, ...p.supply, ...p.competitors, ...p.sectorTerms] : []
+    const lexical = (i, j) => {
+      let inter = 0
+      for (const t of toks[i]) if (toks[j].has(t)) inter++
+      return { jaccard: +(inter / (toks[i].size + toks[j].size - inter || 1)).toFixed(3), overlap: +(inter / (Math.min(toks[i].size, toks[j].size) || 1)).toFixed(3) }
+    }
+    const log = opts.log ? [] : null
+    const merges = semanticMerges(items, [...lexicalGroups.values()], { terms, ignore, windowMs: EVENT_WINDOW_MS, threshold: opts.threshold, lexical, log })
+    for (const m of merges) {
+      const applied = mode === 'on'
+      if (applied) for (const i of m.members) { parent[find(i)] = find(m.members[0]); semanticScore.set(i, m.score) }
+    }
+    if (log) opts.log.push(...log.map((e) => ({ ...e, applied: e.type === 'semantic-merge' && mode === 'on', mode })))
   }
   const groups = new Map()
   items.forEach((it, i) => groups.set(find(i), [...(groups.get(find(i)) || []), it]))
@@ -139,17 +152,18 @@ export function groupEvents(items, ignore) {
       relevance: Math.max(...members.map((m) => m.exposure.relevance)),
       rep: rep.article,
       tokens: new Set(members.flatMap((m) => [...toks[items.indexOf(m)]])),
+      semantic: members.map((m) => semanticScore.get(items.indexOf(m))).find((x) => x != null) ?? null,
       damp: 1, storyline: null, storyRank: 1
     }
   }).sort((a, b) => b.latestMs - a.latestMs)
 }
 
 // ---- storylines: one big story, told from many angles ------------------------
-export const STORY_WINDOW_MS = 72 * HOUR
+export const STORY_WINDOW_MS = SL.window_hours * HOUR
 const STORY = {
-  minEvents: 30, floor: 0.25,
-  minLocal: 4, minRate: 0.12, minBurst: 3, minOutside: 20,   // enough older events to compare against: require a real burst
-  noBaselineLocal: 6, noBaselineRate: 0.15                    // a story fills the whole sample: rely on the stoplists, stricter counts
+  minEvents: SL.min_events, floor: SL.damping_floor,
+  minLocal: SL.min_local, minRate: SL.min_rate, minBurst: SL.min_burst, minOutside: SL.min_outside, // enough older events to compare against: require a real burst
+  noBaselineLocal: SL.no_baseline_local, noBaselineRate: SL.no_baseline_rate                        // a story fills the whole sample: rely on the stoplists, stricter counts
 }
 const BACKGROUND = new Set(background.tokens)
 
@@ -179,7 +193,7 @@ const lowerBound = (arr, x) => { let lo = 0, hi = arr.length; while (lo < hi) { 
  * the pile-on counts for progressively less. Returns the same events with `damp`, `storyline`, `storyRank`, and the
  * damped `weight`. `exclude`: see storylineExclusions. Needs >= 30 events of context to tell a burst from vocabulary.
  */
-export function dampStorylines(events, exclude = new Set()) {
+export function dampStorylines(events, exclude = new Set(), opts = {}) {
   const n = events.length
   if (n < STORY.minEvents) return events
   const order = events.map((_, i) => i).sort((a, b) => events[a].tMs - events[b].tMs || a - b)
@@ -211,7 +225,31 @@ export function dampStorylines(events, exclude = new Set()) {
     const damp = Math.max(STORY.floor, 1 / Math.sqrt(rank))
     out[i].damp = damp; out[i].storyline = best.token; out[i].storyRank = rank; out[i].weight = e.weight * damp
   })
+  semanticStage(events, out, exclude, opts)
   return out
+}
+
+/**
+ * Storylines that share no keyword ("CEO resigns" / "chief steps down" / "who replaces him?") but mean the same thing.
+ * An event takes the semantic story only when it ranks it later than the word-based storyline did (never less damping
+ * than before). 'shadow' (default) logs what it would change; 'on' applies it; 'off' skips it.
+ */
+function semanticStage(events, out, exclude, { semantic, profile, ignore, log, similarity } = {}) {
+  const mode = semantic ?? config.storylines.semantic.mode
+  if (mode === 'off') return
+  const terms = profile ? [...profile.people, ...profile.supply, ...profile.competitors, ...profile.sectorTerms] : []
+  const found = semanticStorylines(events, { windowMs: STORY_WINDOW_MS, terms, ignore, exclude, ...(similarity != null && { similarity }) })
+  found.forEach((s, i) => {
+    if (!s) return
+    const tokenRank = out[i].storyline ? out[i].storyRank : 0
+    if (s.rank <= tokenRank || s.rank < 2) return // the word-based storyline already covers it, or it is the first piece
+    const damp = Math.max(STORY.floor, 1 / Math.sqrt(s.rank))
+    if (damp >= out[i].damp) return
+    log?.push({ type: 'semantic-storyline', applied: mode === 'on', mode, headline: events[i].rep.headline, label: s.label, rank: s.rank, local: s.local, tokenRank,
+      damp: +damp.toFixed(3), tokenDamp: +out[i].damp.toFixed(3), related: s.similar.slice(0, 3).map((j) => events[j].rep.headline) })
+    if (mode !== 'on') return
+    out[i].damp = damp; out[i].storyline = s.label; out[i].storyRank = s.rank; out[i].storyKind = 'semantic'; out[i].weight = events[i].weight * damp
+  })
 }
 
 // ---- searches that find the indirect news ----------------------------------

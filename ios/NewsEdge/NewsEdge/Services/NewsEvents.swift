@@ -49,9 +49,11 @@ struct NewsEvent {
     let relevance: Double
     let rep: Article           // trusted outlet first, then newest
     let tokens: Set<String>    // informative words of all member headlines (for storyline detection)
+    var semantic: Double? = nil // score of the semantic merge that joined members the word rules kept apart, if any
     var damp: Double = 1       // 1/sqrt(rank) within a bursting storyline, floored; 1 otherwise
     var storyline: String? = nil
     var storyRank: Int = 1
+    var storyKind: String? = nil // "semantic" when the storyline came from meaning rather than shared words
     var size: Int { articles.count }
 }
 
@@ -63,7 +65,7 @@ struct ExposedArticle {
 }
 
 enum NewsEvents {
-    static let eventWindow: TimeInterval = 48 * 3600
+    static let eventWindow: TimeInterval = NewsConfig.shared.events.windowHours * 3600
     private static let directMin = 0.35 // the default minimum relevance
 
     private static let file: ProfilesFile? = {
@@ -204,16 +206,19 @@ enum NewsEvents {
         if inter < 2 { return false }
         let jaccard = Double(inter) / Double(a.count + b.count - inter)
         let overlap = Double(inter) / Double(min(a.count, b.count))
-        return jaccard >= 0.5 || (overlap >= 0.75 && inter >= 3)
+        let lex = NewsConfig.shared.events.lexical
+        return jaccard >= lex.jaccard || (overlap >= lex.overlap && inter >= lex.minOverlapTokens)
     }
 
     /// One event's weight: 1 for a single outlet, +0.5*ln(outlets) beyond that, capped (echo != importance, breadth != nothing).
-    static func coverageBoost(_ outlets: Int) -> Double { min(2.5, 1 + 0.5 * log(Double(max(outlets, 1)))) }
+    static func coverageBoost(_ outlets: Int) -> Double { min(NewsConfig.shared.events.outletWeight.cap, 1 + NewsConfig.shared.events.outletWeight.slope * log(Double(max(outlets, 1)))) }
 
     // MARK: - Grouping
 
-    /// Groups exposed articles into events (single-link within 48h), newest first.
-    static func groupEvents(_ items: [ExposedArticle], ignore: Set<String>) -> [NewsEvent] {
+    /// Groups exposed articles into events (single-link within 48h), newest first. Then the semantic stage (embeddings; see
+    /// NewsSemantic) may join events the word rules kept apart: `mode` "off" | "shadow" (log only) | "on", default from config.
+    static func groupEvents(_ items: [ExposedArticle], ignore: Set<String>, profile: NewsProfile? = nil, mode: String? = nil,
+                            threshold: Double? = nil, log: ((NewsSemantic.Decision) -> Void)? = nil) -> [NewsEvent] {
         let toks = items.map { headlineTokens($0.article.headline, ignore: ignore) }
         var parent = Array(items.indices)
         func find(_ i: Int) -> Int {
@@ -225,6 +230,26 @@ enum NewsEvents {
             for j in items.indices where j > i {
                 if abs(items[i].time.timeIntervalSince(items[j].time)) <= eventWindow, sameEvent(toks[i], toks[j]) {
                     parent[find(i)] = find(j)
+                }
+            }
+        }
+        // Semantic stage: only links groups the lexical rules left apart. 'shadow' computes and logs it without applying it.
+        let mode = mode ?? NewsConfig.shared.events.semantic.mode
+        var semanticScore: [Int: Double] = [:] // item index -> score of the semantic merge that put it in its event
+        if mode != "off" {
+            var order: [Int] = [], byRoot: [Int: [Int]] = [:] // first-seen order, so ties resolve like the JS Map
+            for i in items.indices { let r = find(i); if byRoot[r] == nil { order.append(r) }; byRoot[r, default: []].append(i) }
+            let terms = profile.map { $0.people + $0.supply + $0.competitors + $0.sectorTerms } ?? []
+            let lexical: (Int, Int) -> (jaccard: Double, overlap: Double)? = { i, j in
+                let inter = Double(toks[i].intersection(toks[j]).count)
+                let jac = inter / Double(max(toks[i].count + toks[j].count - Int(inter), 1)), ov = inter / Double(max(min(toks[i].count, toks[j].count), 1))
+                return (jac, ov)
+            }
+            let found = NewsSemantic.merges(items: items, groups: order.map { byRoot[$0]! }, terms: terms, ignore: ignore, window: eventWindow,
+                                            threshold: threshold, lexical: lexical, log: log.map { sink in { var d = $0; d.applied = d.kind == .merge && mode == "on"; sink(d) } })
+            if mode == "on" {
+                for m in found {
+                    for i in m.members { let a = find(i), b = find(m.members[0]); parent[a] = b; semanticScore[i] = m.score }
                 }
             }
         }
@@ -250,18 +275,20 @@ enum NewsEvents {
                 channel: top.exposure.channel,
                 relevance: members.map(\.exposure.relevance).max()!,
                 rep: rep.article,
-                tokens: idxs.reduce(into: Set<String>()) { $0.formUnion(toks[$1]) }
+                tokens: idxs.reduce(into: Set<String>()) { $0.formUnion(toks[$1]) },
+                semantic: idxs.compactMap { semanticScore[$0] }.first
             )
         }.sorted { $0.latest > $1.latest }
     }
 
     // MARK: - Storylines: one big story, told from many angles
 
-    static let storyWindow: TimeInterval = 72 * 3600
+    static let storyWindow: TimeInterval = NewsConfig.shared.storylines.windowHours * 3600
     private enum Story {
-        static let minEvents = 30, floor = 0.25
-        static let minLocal = 4, minRate = 0.12, minBurst = 3.0, minOutside = 20   // enough older events to require a real burst
-        static let noBaselineLocal = 6, noBaselineRate = 0.15                      // a story fills the whole sample: stoplists + stricter counts
+        private static let c = NewsConfig.shared.storylines
+        static let minEvents = c.minEvents, floor = c.dampingFloor
+        static let minLocal = c.minLocal, minRate = c.minRate, minBurst = c.minBurst, minOutside = c.minOutside   // enough older events to require a real burst
+        static let noBaselineLocal = c.noBaselineLocal, noBaselineRate = c.noBaselineRate                          // a story fills the whole sample: stoplists + stricter counts
     }
 
     private static let background: Set<String> = {
@@ -294,7 +321,8 @@ enum NewsEvents {
     /// A term is a storyline when it bursts: in >= `minLocal` events within +/-72h of an event and >= 12% of them, and >= 3x as
     /// common there as in the rest of the set (steady words never qualify; Title Case doesn't matter). The k-th event of a
     /// storyline within the window counts for 1/sqrt(k) of its weight (floor 0.25). Mirrors dampStorylines in news.js.
-    static func dampStorylines(_ events: [NewsEvent], exclude: Set<String> = []) -> [NewsEvent] {
+    static func dampStorylines(_ events: [NewsEvent], exclude: Set<String> = [], profile: NewsProfile? = nil, ignore: Set<String> = [],
+                               mode: String? = nil, similarity: Double? = nil, log: ((NewsSemantic.StoryDecision) -> Void)? = nil) -> [NewsEvent] {
         let n = events.count
         guard n >= Story.minEvents else { return events }
         let t = events.map { $0.time.timeIntervalSince1970 }
@@ -328,7 +356,31 @@ enum NewsEvents {
             out[i].storyRank = rank
             out[i].weight = e.weight * damp
         }
+        semanticStage(events, &out, exclude: exclude, profile: profile, ignore: ignore, mode: mode, similarity: similarity, log: log)
         return out
+    }
+
+    /// Storylines that share no keyword ("CEO resigns" / "chief steps down") but mean the same thing. An event takes the semantic
+    /// story only when it damps more than its word-based storyline did. "shadow" logs what it would change; "on" applies it.
+    private static func semanticStage(_ events: [NewsEvent], _ out: inout [NewsEvent], exclude: Set<String>, profile: NewsProfile?, ignore: Set<String>,
+                                      mode: String?, similarity: Double?, log: ((NewsSemantic.StoryDecision) -> Void)?) {
+        let mode = mode ?? NewsConfig.shared.storylines.semantic.mode
+        if mode == "off" { return }
+        let terms = profile.map { $0.people + $0.supply + $0.competitors + $0.sectorTerms } ?? []
+        let found = NewsSemantic.storylines(events, window: storyWindow, terms: terms, ignore: ignore, exclude: exclude, similarity: similarity)
+        for (i, story) in found.enumerated() {
+            guard let s = story else { continue }
+            let tokenRank = out[i].storyline != nil ? out[i].storyRank : 0
+            if s.rank <= tokenRank || s.rank < 2 { continue } // the word-based storyline already covers it, or it is the first piece
+            let damp = max(Story.floor, 1 / Double(s.rank).squareRoot())
+            if damp >= out[i].damp { continue }
+            log?(NewsSemantic.StoryDecision(headline: events[i].rep.headline, label: s.label, rank: s.rank, local: s.local, tokenRank: tokenRank,
+                                            damp: damp, tokenDamp: out[i].damp, related: s.similar.prefix(3).map { events[$0].rep.headline },
+                                            applied: mode == "on", mode: mode))
+            if mode != "on" { continue }
+            out[i].damp = damp; out[i].storyline = s.label; out[i].storyRank = s.rank; out[i].storyKind = "semantic"
+            out[i].weight = events[i].weight * damp
+        }
     }
 
     // MARK: - Searches that find the indirect news

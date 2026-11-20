@@ -5,7 +5,7 @@ import Foundation
 /// summary/trend/articles calls don't race. The first time a ticker is seen it is also backfilled
 /// from Google News RSS (~30 days).
 actor NewsStore {
-    static let shared = NewsStore()
+    static let shared = NewsStore(embed: { SentenceEmbedder.shared?.embed($0) })
 
     private let retention: TimeInterval = 90 * 86_400
     private let directory: URL
@@ -16,6 +16,8 @@ actor NewsStore {
     private let companyName: @Sendable (String) -> String?
     private let scorerID: @Sendable () -> String
     private let indirect: Bool
+    private let embed: (@Sendable ([String]) -> [[Float]]?)?
+    private var embedding: Task<Void, Never>?
     private var indirectDone = Set<String>() // tickers whose leadership/supply/sector/macro searches already ran this session
 
     init(
@@ -25,7 +27,8 @@ actor NewsStore {
         score: @escaping @Sendable (String) -> Double = { Analytics.sentiment($0) },
         companyName: @escaping @Sendable (String) -> String? = { TickerCatalog.name(for: $0) },
         scorerID: @escaping @Sendable () -> String = { FinBERTScorer.shared != nil ? "finbert" : "nltagger" },
-        indirect: Bool = true
+        indirect: Bool = true,
+        embed: (@Sendable ([String]) -> [[Float]]?)? = nil   // nil: no embeddings (tests, no model yet)
     ) {
         self.directory = directory
             ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -37,6 +40,7 @@ actor NewsStore {
         self.companyName = companyName
         self.scorerID = scorerID
         self.indirect = indirect
+        self.embed = embed
     }
 
     /// Fetches fresh news, merges it into the cache, and returns everything cached
@@ -76,8 +80,33 @@ actor NewsStore {
         let cutoff = Date().addingTimeInterval(-retention)
         let merged = byID.values.filter { $0.publishedAt >= cutoff }.sorted { $0.publishedAt > $1.publishedAt }
         save(merged, ticker: ticker)
+        embedMissing(ticker: ticker)
         return merged
     }
+
+    /// Gives every cached article without one an embedding, once ever (a window or relevance change never re-embeds),
+    /// off the actor so it never delays the articles themselves. Articles without one are grouped lexically.
+    private func embedMissing(ticker: String) {
+        guard let embed, embedding == nil else { return }
+        let todo = load(ticker).filter { $0.emb == nil }
+        guard !todo.isEmpty else { return }
+        let company = companyName(ticker)
+        embedding = Task.detached(priority: .utility) { [weak self] in
+            let vectors = embed(todo.map { EmbeddingCodec.text(headline: $0.headline, company: company) })
+            await self?.attach(vectors, to: todo.map(\.id), ticker: ticker)
+        }
+    }
+
+    /// Re-reads the cache after the (slow) embedding so articles saved meanwhile are not overwritten.
+    private func attach(_ vectors: [[Float]]?, to ids: [Int], ticker: String) {
+        embedding = nil
+        guard let vectors, vectors.count == ids.count else { return }
+        let byID = Dictionary(uniqueKeysWithValues: zip(ids, vectors.map(EmbeddingCodec.quantize)))
+        save(load(ticker).map { var a = $0; if a.emb == nil, let e = byID[a.id] { a.emb = e }; return a }, ticker: ticker)
+    }
+
+    /// For tests: resolves once the in-flight embedding pass (if any) has been stored.
+    func waitForEmbeddings() async { await embedding?.value }
 
     private func file(_ ticker: String) -> URL {
         directory.appendingPathComponent("\(Analytics.yahooSymbol(ticker)).v2.\(scorerID()).json") // scores differ per scorer, so never mix them

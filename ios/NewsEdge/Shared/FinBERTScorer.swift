@@ -75,11 +75,11 @@ struct WordPieceTokenizer {
 
 /// On-device FinBERT via Core ML (see scripts/convert_finbert_coreml.py).
 /// `shared` is nil when no model is available (neither bundled nor downloaded by
-/// FinBERTModelStore); callers fall back to NLTagger. Call `reload()` once a download lands.
+/// CoreMLModelStore); callers fall back to NLTagger. Call `reload()` once a download lands.
 final class FinBERTScorer: @unchecked Sendable {
     static let sequenceLength = 64 // must match SEQ_LEN in the conversion script
 
-    /// Where FinBERTModelStore installs the downloaded, compiled model.
+    /// Where CoreMLModelStore installs the downloaded, compiled model.
     static var downloadedModelURL: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("models/FinBERT.mlmodelc", isDirectory: true)

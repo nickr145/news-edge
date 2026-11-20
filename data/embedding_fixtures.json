@@ -1,0 +1,243 @@
+{
+ "model": "all-MiniLM-L6-v2",
+ "pairs": [
+  {
+   "label": "same_event",
+   "company": "Nvidia",
+   "a": "Nvidia CEO Jensen Huang announces resignation",
+   "b": "Chipmaker's chief executive steps down unexpectedly",
+   "cosine": 0.5772
+  },
+  {
+   "label": "same_event",
+   "company": "Nvidia",
+   "a": "Nvidia CEO announces surprise resignation",
+   "b": "Chipmaker chief steps down after a decade",
+   "cosine": 0.6068
+  },
+  {
+   "label": "same_event",
+   "company": "Apple",
+   "a": "Apple beats earnings expectations as iPhone sales surge",
+   "b": "Apple tops Wall Street estimates on strong iPhone demand",
+   "cosine": 0.6538
+  },
+  {
+   "label": "same_event",
+   "company": "Tesla",
+   "a": "Tesla recalls 200,000 vehicles over software glitch",
+   "b": "Tesla issues recall for 200K cars due to software bug",
+   "cosine": 0.9006
+  },
+  {
+   "label": "same_event",
+   "company": "Amazon",
+   "a": "Amazon to cut 10,000 corporate jobs",
+   "b": "Amazon plans layoffs of about 10,000 office workers",
+   "cosine": 0.7339
+  },
+  {
+   "label": "same_event",
+   "company": "Boeing",
+   "a": "Boeing wins $5 billion order from Emirates",
+   "b": "Emirates places multibillion-dollar Boeing jet order",
+   "cosine": 0.7022
+  },
+  {
+   "label": "same_event",
+   "company": "Microsoft",
+   "a": "Microsoft agrees to buy gaming studio for $2 billion",
+   "b": "Microsoft acquires game developer in $2B deal",
+   "cosine": 0.7854
+  },
+  {
+   "label": "same_event",
+   "company": "Federal Reserve",
+   "a": "Fed holds interest rates steady, signals cuts later this year",
+   "b": "Federal Reserve leaves rates unchanged, hints at easing ahead",
+   "cosine": 0.7211
+  },
+  {
+   "label": "same_event",
+   "company": "Pfizer",
+   "a": "Pfizer's weight-loss drug fails late-stage trial",
+   "b": "Pfizer obesity pill misses goal in phase 3 study",
+   "cosine": 0.754
+  },
+  {
+   "label": "same_event",
+   "company": "Meta",
+   "a": "Meta fined $1.3 billion by EU over data transfers",
+   "b": "EU regulators hit Meta with record 1.3 billion euro penalty",
+   "cosine": 0.6622
+  },
+  {
+   "label": "same_event",
+   "company": "JPMorgan",
+   "a": "JPMorgan profit jumps 20% on higher interest income",
+   "b": "JPMorgan quarterly earnings climb a fifth as net interest income rises",
+   "cosine": 0.8018
+  },
+  {
+   "label": "same_event",
+   "company": "Intel",
+   "a": "Intel delays next-generation chip factory in Ohio",
+   "b": "Intel pushes back Ohio fab opening",
+   "cosine": 0.558
+  },
+  {
+   "label": "same_story",
+   "company": "Nvidia",
+   "a": "Nvidia CEO Jensen Huang announces resignation",
+   "b": "Nvidia board appoints interim CEO",
+   "cosine": 0.5829
+  },
+  {
+   "label": "same_story",
+   "company": "Nvidia",
+   "a": "Nvidia CEO Jensen Huang announces resignation",
+   "b": "Analysts weigh what the CEO exit means for Nvidia's future",
+   "cosine": 0.5765
+  },
+  {
+   "label": "same_story",
+   "company": "Nvidia",
+   "a": "Nvidia board appoints interim CEO",
+   "b": "Nvidia begins search for permanent chief executive",
+   "cosine": 0.742
+  },
+  {
+   "label": "same_story",
+   "company": "Boeing",
+   "a": "Boeing 737 MAX grounded after mid-air panel blowout",
+   "b": "FAA opens investigation into Boeing quality control",
+   "cosine": 0.2148
+  },
+  {
+   "label": "same_story",
+   "company": "Boeing",
+   "a": "FAA opens investigation into Boeing quality control",
+   "b": "Boeing CEO faces Senate questions over safety lapses",
+   "cosine": 0.3892
+  },
+  {
+   "label": "same_story",
+   "company": "Tesla",
+   "a": "Tesla recalls 200,000 vehicles over software glitch",
+   "b": "NHTSA opens probe into Tesla software recall",
+   "cosine": 0.6494
+  },
+  {
+   "label": "same_company_other_event",
+   "company": "Nvidia",
+   "a": "Nvidia posts record data center revenue",
+   "b": "Nvidia CEO Jensen Huang announces resignation",
+   "cosine": 0.2524
+  },
+  {
+   "label": "same_company_other_event",
+   "company": "Apple",
+   "a": "Apple beats earnings expectations as iPhone sales surge",
+   "b": "Apple faces new EU antitrust probe over App Store",
+   "cosine": 0.3087
+  },
+  {
+   "label": "same_company_other_event",
+   "company": "Tesla",
+   "a": "Tesla recalls 200,000 vehicles over software glitch",
+   "b": "Tesla opens new factory in Mexico",
+   "cosine": 0.3951
+  },
+  {
+   "label": "same_company_other_event",
+   "company": "Amazon",
+   "a": "Amazon to cut 10,000 corporate jobs",
+   "b": "Amazon expands same-day delivery to 50 new cities",
+   "cosine": 0.403
+  },
+  {
+   "label": "same_company_other_event",
+   "company": "Microsoft",
+   "a": "Microsoft agrees to buy gaming studio for $2 billion",
+   "b": "Microsoft announces new Copilot features for Office",
+   "cosine": 0.2774
+  },
+  {
+   "label": "same_company_other_event",
+   "company": "Nvidia",
+   "a": "Nvidia posts record data center revenue",
+   "b": "Chipmaker's chief executive steps down unexpectedly",
+   "cosine": 0.3462
+  },
+  {
+   "label": "shared_name",
+   "company": "Nvidia",
+   "a": "Jensen Huang comments on Nvidia strategy",
+   "b": "Alice Huang faces unrelated legal investigation",
+   "cosine": 0.5313
+  },
+  {
+   "label": "shared_name",
+   "company": "Tesla",
+   "a": "Elon Musk buys social network",
+   "b": "Elon Musk Foundation donates to school",
+   "cosine": 0.5121
+  },
+  {
+   "label": "shared_name",
+   "company": "Apple",
+   "a": "Apple Hospitality REIT raises dividend",
+   "b": "Apple unveils new iPhone with improved camera",
+   "cosine": 0.1688
+  },
+  {
+   "label": "shared_name",
+   "company": "Amazon",
+   "a": "Amazon rainforest fires hit record levels",
+   "b": "Amazon to cut 10,000 corporate jobs",
+   "cosine": 0.3228
+  },
+  {
+   "label": "unrelated_sector",
+   "company": "Nvidia",
+   "a": "Nvidia posts record data center revenue",
+   "b": "AMD wins major cloud contract",
+   "cosine": 0.4548
+  },
+  {
+   "label": "unrelated_sector",
+   "company": "Intel",
+   "a": "Intel delays next-generation chip factory in Ohio",
+   "b": "Qualcomm launches new smartphone processor",
+   "cosine": 0.4079
+  },
+  {
+   "label": "unrelated_sector",
+   "company": "JPMorgan",
+   "a": "JPMorgan profit jumps 20% on higher interest income",
+   "b": "Bank of America to close 100 branches",
+   "cosine": 0.4682
+  },
+  {
+   "label": "unrelated",
+   "company": "Nvidia",
+   "a": "Nvidia CEO Jensen Huang announces resignation",
+   "b": "Apple unveils new iPhone with improved camera",
+   "cosine": 0.2359
+  },
+  {
+   "label": "unrelated",
+   "company": "Tesla",
+   "a": "Fed holds rates steady",
+   "b": "Tesla recalls vehicles over software bug",
+   "cosine": 0.238
+  },
+  {
+   "label": "unrelated",
+   "company": "Pfizer",
+   "a": "Pfizer's weight-loss drug fails late-stage trial",
+   "b": "Boeing wins $5 billion order from Emirates",
+   "cosine": 0.3088
+  }
+ ]
+}

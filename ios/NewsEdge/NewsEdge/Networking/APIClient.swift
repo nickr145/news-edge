@@ -29,6 +29,7 @@ final class APIClient {
             .prefix(limit)
             .map { e in
                 var a = e.rep
+                a.emb = nil // embeddings stay in the cache
                 a.relevanceScore = (e.relevance * 10_000).rounded() / 10_000
                 a.channel = e.channel
                 a.eventSize = e.size
@@ -36,6 +37,7 @@ final class APIClient {
                 a.storyline = e.storyline
                 a.storyRank = e.storyRank
                 a.storyDamp = (e.damp * 10_000).rounded() / 10_000
+                a.semanticScore = e.semantic.map { ($0 * 10_000).rounded() / 10_000 }
                 return a
             }
     }
@@ -115,6 +117,24 @@ final class APIClient {
         )
     }
 
+    // MARK: - Explainability
+
+    private let decisionLock = NSLock()
+    private var lastDecisions: [String: [NewsSemantic.Decision]] = [:]
+    private var lastStoryDecisions: [String: [NewsSemantic.StoryDecision]] = [:]
+
+    /// The semantic merges and near misses behind the last grouping of `ticker` (the iOS twin of `newsedge.api.debug.decisions`).
+    func decisions(ticker: String) -> [NewsSemantic.Decision] {
+        decisionLock.lock(); defer { decisionLock.unlock() }
+        return lastDecisions[ticker.uppercased()] ?? []
+    }
+
+    /// The semantic storyline changes (applied or, in shadow mode, only proposed) behind the last grouping of `ticker`.
+    func storyDecisions(ticker: String) -> [NewsSemantic.StoryDecision] {
+        decisionLock.lock(); defer { decisionLock.unlock() }
+        return lastStoryDecisions[ticker.uppercased()] ?? []
+    }
+
     // MARK: - Helpers
 
     private func daysAgo(_ days: Double) -> Date { now().addingTimeInterval(-days * 86_400) }
@@ -134,13 +154,17 @@ final class APIClient {
         let profile = NewsEvents.profile(for: ticker, companyName: TickerCatalog.name(for: ticker))
         var items: [ExposedArticle] = []
         // Storyline detection needs context (what is normal vs a burst), so look back at least 30 days even for a 1-day window.
-        let context = min(since, now().addingTimeInterval(-30 * 86_400))
+        let context = min(since, now().addingTimeInterval(-NewsConfig.shared.storylines.contextDays * 86_400))
         for a in try await store.articles(ticker: ticker) where a.publishedAt >= context {
             guard let ex = NewsEvents.exposure(profile: profile, headline: a.headline, symbols: a.symbols ?? []),
                   ex.relevance >= minRelevance else { continue }
             items.append(ExposedArticle(article: a, exposure: ex, time: a.publishedAt, value: (a.compound ?? 0) * (a.sourceWeight ?? 1) * ex.sign))
         }
-        let grouped = NewsEvents.groupEvents(items, ignore: NewsEvents.ignoreTokens(profile))
-        return NewsEvents.dampStorylines(grouped, exclude: NewsEvents.storylineExclusions(profile)).filter { $0.time >= since }
+        var log: [NewsSemantic.Decision] = [], storyLog: [NewsSemantic.StoryDecision] = []
+        let ignore = NewsEvents.ignoreTokens(profile)
+        let grouped = NewsEvents.groupEvents(items, ignore: ignore, profile: profile, log: { log.append($0) })
+        let damped = NewsEvents.dampStorylines(grouped, exclude: NewsEvents.storylineExclusions(profile), profile: profile, ignore: ignore, log: { storyLog.append($0) })
+        decisionLock.lock(); lastDecisions[profile.ticker] = log; lastStoryDecisions[profile.ticker] = storyLog; decisionLock.unlock()
+        return damped.filter { $0.time >= since }
     }
 }

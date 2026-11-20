@@ -3,7 +3,9 @@
 import { TICKERS } from '../../data/tickers'
 import * as A from './analytics'
 import * as N from './news'
+import config from '../../data/newsConfig.json'
 import { createSources } from './sources'
+import { createEmbedder, embeddingText, quantize } from './embeddings'
 
 const RETENTION_MS = 90 * 86_400_000
 const DAY_MS = 86_400_000
@@ -21,7 +23,12 @@ export function createLocalApi({
   storage = (typeof localStorage !== 'undefined' ? localStorage : memoryStorage()),
   score = A.sentiment,
   companyName = (t) => TICKERS.find((x) => x.symbol === String(t).toUpperCase())?.name ?? null,
-  now = () => new Date()
+  now = () => new Date(),
+  embedder = (typeof window === 'undefined' ? null : createEmbedder()), // tests and SSR never download the model
+  semanticMode, // 'off' | 'shadow' | 'on'; default: events.semantic.mode in data/news_config.json
+  semanticThreshold, // default: events.semantic.threshold (only evaluation overrides it)
+  storylineMode, // 'off' | 'shadow' | 'on'; default: storylines.semantic.mode
+  storylineSimilarity // default: storylines.semantic.similarity (only evaluation overrides it)
 } = {}) {
   const src = createSources({ fetchImpl, storage })
   const newsKey = (t) => `newsedge_news_v1_${A.yahooSymbol(t)}`
@@ -54,6 +61,7 @@ export function createLocalApi({
       const cutoff = now().getTime() - RETENTION_MS
       const merged = [...byId.values()].filter((a) => Date.parse(a.published_at) >= cutoff).sort((a, b) => b.published_at.localeCompare(a.published_at))
       saveNews(ticker, merged)
+      embedMissing(ticker) // background: never delays the articles themselves
       return merged
     }
     const next = queue.then(run, run)
@@ -61,6 +69,25 @@ export function createLocalApi({
     return next
   }
 
+  /**
+   * Gives every cached article without one an embedding (stored as `emb`, int8 base64), once ever: toggling a window or
+   * relevance never re-embeds. Fire-and-forget; articles without one are simply grouped lexically. Storage is re-read
+   * after the await so articles saved meanwhile are not overwritten.
+   */
+  let embedding = Promise.resolve()
+  function embedMissing(ticker) {
+    if (!embedder) return
+    embedding = embedding.then(async () => {
+      const todo = loadNews(ticker).filter((a) => !a.emb)
+      if (!todo.length) return
+      const vecs = await embedder.embed(todo.map((a) => embeddingText(a.headline, companyName(ticker))))
+      if (!vecs) return
+      const emb = new Map(todo.map((a, i) => [a.id, quantize(vecs[i])]))
+      saveNews(ticker, loadNews(ticker).map((a) => (emb.has(a.id) && !a.emb ? { ...a, emb: emb.get(a.id) } : a)))
+    }).catch(() => {})
+  }
+
+  const decisions = new Map() // ticker -> why the last grouping pass merged (or nearly merged) events; see debug.decisions
   const indirectDone = new Set() // tickers whose leadership/supply/sector/macro searches already ran this session
 
   /** Cached news + (once per session) the indirect searches, whose results are kept only if they bear on the ticker. */
@@ -74,7 +101,7 @@ export function createLocalApi({
     const profile = profileOf(ticker)
     const items = []
     // Storyline detection needs context (what is normal vs a burst), so look back at least 30 days even for a 1-day window.
-    const contextMs = Math.min(sinceMs, now().getTime() - 30 * DAY_MS)
+    const contextMs = Math.min(sinceMs, now().getTime() - config.storylines.context_days * DAY_MS)
     for (const a of await articles(ticker)) {
       const tMs = Date.parse(a.published_at)
       if (tMs < contextMs) continue
@@ -82,9 +109,14 @@ export function createLocalApi({
       if (!exposure || exposure.relevance < minRelevance) continue
       items.push({ article: a, exposure, tMs, value: a.compound * (a.source_weight ?? 1) * exposure.sign })
     }
-    return N.dampStorylines(N.groupEvents(items, N.ignoreTokens(profile)), N.storylineExclusions(profile)).filter((e) => e.tMs >= sinceMs)
+    const log = [], ignore = N.ignoreTokens(profile)
+    const grouped = N.groupEvents(items, ignore, { profile, log, semantic: semanticMode, threshold: semanticThreshold })
+    const damped = N.dampStorylines(grouped, N.storylineExclusions(profile), { profile, ignore, log, semantic: storylineMode, similarity: storylineSimilarity })
+    decisions.set(A.yahooSymbol(ticker), log)
+    return damped.filter((e) => e.tMs >= sinceMs)
   }
 
+  const withoutEmb = ({ emb, ...rest }) => rest // embeddings stay in the cache, never in what the UI receives
   const daysAgo = (d) => now().getTime() - d * DAY_MS
   const round4 = (x) => Math.round(x * 1e4) / 1e4
   /** Recency-weighted sentiment of events for a window/horizon of `days` (half-life = days / 3). */
@@ -94,8 +126,8 @@ export function createLocalApi({
   const routes = [
     ['GET', /^\/api\/news\/([^/]+)$/, async ([t], p) =>
       (await eventsFor(t, daysAgo(p.days ?? 30), p.min_relevance ?? 0.35)).slice(0, p.limit ?? 100)
-        .map((e) => ({ ...e.rep, relevance_score: round4(e.relevance), channel: e.channel, event_size: e.size, event_outlets: e.outlets,
-          storyline: e.storyline, story_rank: e.storyRank, story_damp: round4(e.damp) }))],
+        .map((e) => ({ ...withoutEmb(e.rep), relevance_score: round4(e.relevance), channel: e.channel, event_size: e.size, event_outlets: e.outlets,
+          storyline: e.storyline, story_rank: e.storyRank, story_damp: round4(e.damp), semantic_score: e.semantic == null ? null : round4(e.semantic) }))],
     ['GET', /^\/api\/news\/([^/]+)\/sentiment$/, async ([t], p) => {
       const events = await eventsFor(t, daysAgo(p.days ?? 7), p.min_relevance ?? 0.35)
       const values = events.map((e) => e.value), weights = events.map((e) => e.weight)
@@ -146,7 +178,9 @@ export function createLocalApi({
 
   return {
     get: (path, { params } = {}) => call('GET', path, params),
-    post: (path, body, { params } = {}) => call('POST', path, params, body)
+    post: (path, body, { params } = {}) => call('POST', path, params, body),
+    /** Explainability: the semantic merges and near misses behind the last grouping of `ticker` (see semantic.js). */
+    debug: { decisions: (ticker) => decisions.get(A.yahooSymbol(ticker)) || [] }
   }
 }
 
