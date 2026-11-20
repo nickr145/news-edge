@@ -290,7 +290,6 @@ describe('indirect news', () => {
   })
 })
 
-
 // ---- indirect candidates: rejected search results kept for the semantic check ---------
 describe('indirect candidates', () => {
   const rssItem = (title, source, time) => `<item><title>${title} - ${source}</title><link>https://g.test/${encodeURIComponent(title)}</link><pubDate>${time.toUTCString()}</pubDate><source url="x">${source}</source></item>`
@@ -301,7 +300,8 @@ describe('indirect candidates', () => {
     rssItem('Local bakery wins award', 'Gazette', new Date(NOW.getTime() - H))
   ].join('')}</channel></rss>`
   const direct = search([{ title: 'Nvidia posts record data center revenue', time: new Date(NOW.getTime() - H), tickers: ['NVDA'] }])
-  const setup = (extra = {}) => make({ search: { body: direct }, gnews: 'down', gsearch: { body: gsearchRSS } },
+  const closes = Array.from({ length: 40 }, (_, i) => 100 + i), stamps = closes.map((_, i) => 1767225600 + i * 86400)
+  const setup = (extra = {}) => make({ search: { body: direct }, gnews: 'down', gsearch: { body: gsearchRSS }, chart: { body: chart(closes, stamps) } },
     { companyName: () => 'NVIDIA Corporation', indirectThreshold: 0.6, indirectMargin: 0.2, ...extra })
   const cached = (storage) => JSON.parse(storage.getItem('newsedge_news_v1_NVDA'))
 
@@ -322,6 +322,12 @@ describe('indirect candidates', () => {
       await api.get('/api/news/NVDA', { params: { days: 30 } })
       expect(cached(storage).some((a) => a.cand)).toBe(false)
     }
+  })
+  it('never counts a recent candidate in the predict route (24h article volume)', async () => {
+    const predict = async (extra) => (await setup(extra).api.post('/api/predict/NVDA/sync', {})).data
+    const shadow = await predict({ indirectMode: 'shadow' }), off = await predict({ indirectMode: 'off' })
+    expect(off.feature_importances.article_volume_24h).toBe(2) // direct + keyword-accepted TSMC; the two candidates are also < 24h old
+    expect(shadow).toEqual(off)
   })
   it('keeps only the newest maxCandidates candidates', async () => {
     const { api, storage } = setup({ indirectMode: 'shadow', maxCandidates: 1 })

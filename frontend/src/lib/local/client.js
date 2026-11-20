@@ -177,7 +177,7 @@ export function createLocalApi({
       return A.predict({
         ticker: t, horizonDays: horizon, signal: signalOf(inHorizon, horizon),
         ewma1d: signalOf(one, 1), ewma7d: signalOf(seven, 7), sentimentVolatility: A.weightedStd(seven.map((e) => e.value), seven.map((e) => e.weight)),
-        articleVolume24h: all.filter((a) => Date.parse(a.published_at) >= daysAgo(1)).length,
+        articleVolume24h: all.filter((a) => !a.cand && Date.parse(a.published_at) >= daysAgo(1)).length,
         price: A.priceFeatures(bars), now: now()
       })
     }]
