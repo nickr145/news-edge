@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import NewsFeed from '../components/NewsFeed'
 import PredictionCard from '../components/PredictionCard'
 import PriceChart from '../components/PriceChart'
 import RiskPanel from '../components/RiskPanel'
 import SentimentPanel from '../components/SentimentPanel'
+import { TICKERS } from '../data/tickers'
 import { useWatchlist } from '../hooks/useWatchlist'
 import { api } from '../lib/api'
 
@@ -75,19 +76,38 @@ export default function TickerPage() {
     return () => clearInterval(id)
   }, [ticker, windowDays, minRelevance])
 
+  const predictionRequest = useRef(0) // only the latest request may update the card (ticker switches, double clicks)
   const triggerPrediction = async () => {
-    if (predicting) return
+    const id = ++predictionRequest.current
     setPredicting(true)
     try {
       const queued = await api.post(`/api/predict/${ticker}/sync`, { horizon_days: horizonDays })
+      if (id !== predictionRequest.current) return
       setPrediction(queued.data)
       setError(null)
     } catch {
-      setError('Prediction failed. Please try again.')
+      if (id === predictionRequest.current) setError('Prediction failed. Please try again.')
     } finally {
-      setPredicting(false)
+      if (id === predictionRequest.current) setPredicting(false)
     }
   }
+
+  // Show the default recommendation as soon as a ticker opens (and drop the previous ticker's).
+  useEffect(() => {
+    if (!ticker) return
+    setPrediction(null)
+    triggerPrediction()
+  }, [ticker])
+
+  // Latest daily close and the change since the close before it, from the bars we already load.
+  const quote = useMemo(() => {
+    const closes = (bars || []).map((b) => Number(b.close)).filter(Number.isFinite)
+    if (!closes.length) return null
+    const price = closes[closes.length - 1]
+    const change = closes.length > 1 ? price - closes[closes.length - 2] : null
+    return { price, change, pct: change == null ? null : (change / closes[closes.length - 2]) * 100 }
+  }, [bars])
+  const companyName = TICKERS.find((t) => t.symbol === ticker)?.name
 
   const watched = isWatched(ticker)
 
@@ -95,8 +115,20 @@ export default function TickerPage() {
     <div className="ticker-page">
       <div className="ticker-header">
         <div>
-          <div className="ticker-symbol">{ticker}</div>
-          <div className="ticker-tagline">Sentiment intelligence · Live feed</div>
+          <div className="ticker-title">
+            <div className="ticker-symbol">{ticker}</div>
+            {quote && (
+              <div className="ticker-quote" title="Latest daily close">
+                <span className="ticker-price">${quote.price.toFixed(2)}</span>
+                {quote.change != null && (
+                  <span className={`ticker-change ${quote.change >= 0 ? 'up' : 'down'}`}>
+                    {quote.change >= 0 ? '+' : '−'}${Math.abs(quote.change).toFixed(2)} ({quote.change >= 0 ? '+' : '−'}{Math.abs(quote.pct).toFixed(2)}%)
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="ticker-tagline">{companyName ? `${companyName} · ` : ''}Sentiment intelligence · Live feed</div>
         </div>
         <div className="ticker-controls">
           <button
@@ -131,19 +163,24 @@ export default function TickerPage() {
       {loading && <div className="loading-bar" />}
 
       <div className="ticker-layout">
-        <aside className="ticker-sidebar">
-          <PredictionCard
-            prediction={prediction}
-            onPredict={triggerPrediction}
-            predicting={predicting}
-            horizonDays={horizonDays}
-            onHorizonChange={setHorizonDays}
-          />
-          <RiskPanel risk={risk} />
-        </aside>
-        <div className="ticker-main">
-          <PriceChart bars={bars} trend={trend} />
-          <SentimentPanel summary={summary} trend={trend} />
+        {/* The sticky sidebar can only stick inside this grid, so it scrolls away before the news section starts. */}
+        <div className="ticker-analytics">
+          <aside className="ticker-sidebar">
+            <PredictionCard
+              prediction={prediction}
+              onPredict={triggerPrediction}
+              predicting={predicting}
+              horizonDays={horizonDays}
+              onHorizonChange={setHorizonDays}
+            />
+            <RiskPanel risk={risk} />
+          </aside>
+          <div className="ticker-main">
+            <PriceChart bars={bars} trend={trend} />
+            <SentimentPanel summary={summary} trend={trend} />
+          </div>
+        </div>
+        <div className="ticker-news">
           <NewsFeed articles={articles} loading={loading} />
         </div>
       </div>

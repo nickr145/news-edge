@@ -1,6 +1,12 @@
 import { ComposedChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { useIsMobile } from '../hooks/useIsMobile'
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const shortDate = (day) => { // 'YYYY-MM-DD' -> 'Oct 23' (string maths: no timezone shift)
+  const [, m, d] = String(day).split('-')
+  return MONTHS[Number(m) - 1] ? `${MONTHS[Number(m) - 1]} ${Number(d)}` : day
+}
+
 export default function PriceChart({ bars, trend }) {
   const isMobile = useIsMobile()
   const sentMap = {}
@@ -32,21 +38,21 @@ export default function PriceChart({ bars, trend }) {
       borderRadius: 8,
       fontSize: 12,
     },
-    labelStyle: { color: '#64748b' },
+    labelStyle: { color: '#94a3b8' },
   }
 
   return (
     <div className="card">
       <div className="panel-label">Price & Sentiment</div>
       <ResponsiveContainer width="100%" aspect={isMobile ? 1.3 : 2.2}>
-        <ComposedChart data={data} margin={{ bottom: 20, right: isMobile ? 8 : 48, left: 4 }}>
+        <ComposedChart data={data} margin={{ bottom: 8, right: isMobile ? 8 : 48, left: 4 }}>
           <XAxis
             dataKey="day"
-            tick={{ fontSize: 10, fill: '#64748b' }}
+            tick={{ fontSize: 10, fill: '#94a3b8' }}
+            tickFormatter={shortDate}
             interval="preserveStartEnd"
-            angle={isMobile ? 0 : -30}
-            textAnchor={isMobile ? 'middle' : 'end'}
-            height={isMobile ? 24 : 40}
+            minTickGap={isMobile ? 28 : 48}
+            height={24}
           />
           <YAxis
             yAxisId="price"
@@ -63,7 +69,7 @@ export default function PriceChart({ bars, trend }) {
             width={isMobile ? 24 : 32}
           />
           <Tooltip {...tooltipStyle} />
-          <Legend wrapperStyle={{ fontSize: 11, color: '#64748b', paddingTop: 4 }} />
+          <Legend wrapperStyle={{ fontSize: 11, color: '#94a3b8', paddingTop: 4 }} />
           <Line
             yAxisId="price"
             type="monotone"

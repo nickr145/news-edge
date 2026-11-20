@@ -74,15 +74,11 @@ export default function PredictionCard({ prediction, onPredict, predicting, hori
               <span className="metric-label">RSI</span>
               <span className="metric-value">{prediction.price_rsi?.toFixed?.(1) ?? '—'}</span>
             </div>
-            <div className="metric-cell wide">
-              <span className="metric-label">Horizon</span>
-              <span className="metric-value">{prediction.horizon_days ?? '—'} days</span>
-            </div>
           </div>
           <ShapChart importances={prediction.feature_importances} />
         </>
       ) : (
-        <p className="muted-text" style={{ marginBottom: '0.75rem' }}>Run a prediction to see a RISE / STABLE / FALL signal.</p>
+        <p className="muted-text" style={{ marginBottom: '0.75rem' }}>{predicting ? 'Calculating the recommendation…' : 'Run a prediction to see a RISE / STABLE / FALL signal.'}</p>
       )}
       <div className="horizon-row">
         <span className="ctrl-label">Horizon</span>
