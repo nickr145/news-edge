@@ -369,6 +369,48 @@ describe('indirect candidates', () => {
       expect(anchorItem(storage)).toBeNull()
     }
   })
+
+  const settle = (storage, anchors = true) => vi.waitFor(() => {
+    if (anchors) expect(anchorItem(storage)).not.toBeNull()
+    expect(cached(storage).every((x) => x.emb)).toBe(true)
+  })
+  const feed = async (api, min = 0.2) => (await api.get('/api/news/NVDA', { params: { days: 30, min_relevance: min } })).data
+  const run = async (extra, min) => {
+    const { api, storage } = setup({ embedder: fakeEmbedder(), ...extra })
+    await feed(api, min) // first pass: nothing embedded yet, so it is keyword-only
+    await settle(storage, extra.indirectMode !== 'off')
+    return { api, data: await feed(api, min) }
+  }
+
+  it('on: admits the candidate under the winning channel, and still leaves the unrelated one out', async () => {
+    const { data } = await run({ indirectMode: 'on' })
+    const hit = data.find((a) => a.headline === MISS)
+    expect(hit).toMatchObject({ channel: 'supply', relevance_score: 0.5 })
+    expect(hit.cand).toBeUndefined()
+    expect(data.some((a) => /bakery/.test(a.headline))).toBe(false)
+  })
+  it('on: the relevance selector still applies to an admitted candidate', async () => {
+    const { data } = await run({ indirectMode: 'on' }, 0.7) // supply relevance is 0.5
+    expect(data.some((a) => a.headline === MISS)).toBe(false)
+  })
+  it('shadow: logs the admission but changes nothing', async () => {
+    const { api, data } = await run({ indirectMode: 'shadow' })
+    expect(data.some((a) => a.headline === MISS)).toBe(false)
+    const entry = api.debug.decisions('NVDA').find((d) => d.type === 'semantic-indirect')
+    expect(entry).toMatchObject({ applied: false, mode: 'shadow', headline: MISS, channel: 'supply', relevance: 0.5 })
+    expect(entry.cosine).toBeGreaterThan(0.9)
+    expect(api.debug.decisions('NVDA').filter((d) => d.type === 'semantic-indirect')).toHaveLength(1) // the bakery scores 0: not even a near miss
+  })
+  it('a keyword match is never overridden or logged', async () => {
+    const { api, data } = await run({ indirectMode: 'on' })
+    expect(data.find((a) => a.headline.startsWith('TSMC')).channel).toBe('supply') // by keyword, not embedding
+    expect(api.debug.decisions('NVDA').some((d) => d.headline.startsWith('TSMC'))).toBe(false)
+  })
+  it('off: identical to today (no candidates, nothing logged)', async () => {
+    const { api, data } = await run({ indirectMode: 'off' })
+    expect(data.some((a) => a.headline === MISS)).toBe(false)
+    expect(api.debug.decisions('NVDA').some((d) => d.type === 'semantic-indirect')).toBe(false)
+  })
 })
 
 // ---- storylines through the API ---------------------------------------------

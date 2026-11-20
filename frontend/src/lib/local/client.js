@@ -6,7 +6,8 @@ import * as N from './news'
 import config from '../../data/newsConfig.json'
 import { createSources } from './sources'
 import { createEmbedder, dequantize, embeddingText, quantize } from './embeddings'
-import { anchorTexts } from './indirect'
+import { anchorTexts, semanticExposure } from './indirect'
+import { vectorOf } from './semantic'
 
 const RETENTION_MS = 90 * 86_400_000
 const DAY_MS = 86_400_000
@@ -141,14 +142,24 @@ export function createLocalApi({
     const items = []
     // Storyline detection needs context (what is normal vs a burst), so look back at least 30 days even for a 1-day window.
     const contextMs = Math.min(sinceMs, now().getTime() - config.storylines.context_days * DAY_MS)
+    const log = [], ignore = N.ignoreTokens(profile)
+    const anchors = indirectActive ? anchorsReady.get(A.yahooSymbol(ticker)) : null
+    const nearMiss = ISEM.near_miss ?? 0.05
     for (const a of await articles(ticker)) {
       const tMs = Date.parse(a.published_at)
       if (tMs < contextMs) continue
-      const exposure = N.exposureOf(profile, a.headline, a.symbols || [])
+      let exposure = N.exposureOf(profile, a.headline, a.symbols || [])
+      if (!exposure && a.cand && a.emb && anchors) { // no keyword matched: ask the embedding (keyword matches are never second-guessed)
+        const r = semanticExposure(vectorOf(a), anchors, { threshold: iThreshold, margin: iMargin })
+        if (r && r.cosine >= iThreshold - nearMiss) {
+          const applied = r.admit && iMode === 'on'
+          log.push({ type: 'semantic-indirect', applied, mode: iMode, headline: a.headline, channel: r.channel, cosine: round4(r.cosine), margin: round4(r.margin), relevance: r.exposure.relevance })
+          if (applied) exposure = r.exposure
+        }
+      }
       if (!exposure || exposure.relevance < minRelevance) continue
       items.push({ article: a, exposure, tMs, value: a.compound * (a.source_weight ?? 1) * exposure.sign })
     }
-    const log = [], ignore = N.ignoreTokens(profile)
     const grouped = N.groupEvents(items, ignore, { profile, log, semantic: semanticMode, threshold: semanticThreshold })
     const damped = N.dampStorylines(grouped, N.storylineExclusions(profile), { profile, ignore, log, semantic: storylineMode, similarity: storylineSimilarity })
     decisions.set(A.yahooSymbol(ticker), log)
