@@ -53,6 +53,14 @@
       "no_shared_entity_cosine": 0.75
     }
   },
+  "indirect": {
+    "semantic": {
+      "mode": "shadow",
+      "threshold": null,
+      "margin": null,
+      "near_miss": 0.05
+    }
+  },
   "embedding": {
     "model": "all-MiniLM-L6-v2",
     "dimension": 384,
