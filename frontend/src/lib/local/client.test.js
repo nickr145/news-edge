@@ -290,6 +290,46 @@ describe('indirect news', () => {
   })
 })
 
+
+// ---- indirect candidates: rejected search results kept for the semantic check ---------
+describe('indirect candidates', () => {
+  const rssItem = (title, source, time) => `<item><title>${title} - ${source}</title><link>https://g.test/${encodeURIComponent(title)}</link><pubDate>${time.toUTCString()}</pubDate><source url="x">${source}</source></item>`
+  const MISS = 'Earthquake shuts down island plants that make advanced processors' // no profile keyword in it
+  const gsearchRSS = `<rss><channel>${[
+    rssItem('TSMC warns of capacity shortage', 'Reuters', new Date(NOW.getTime() - 2 * H)),
+    rssItem(MISS, 'Reuters', new Date(NOW.getTime() - 3 * H)),
+    rssItem('Local bakery wins award', 'Gazette', new Date(NOW.getTime() - H))
+  ].join('')}</channel></rss>`
+  const direct = search([{ title: 'Nvidia posts record data center revenue', time: new Date(NOW.getTime() - H), tickers: ['NVDA'] }])
+  const setup = (extra = {}) => make({ search: { body: direct }, gnews: 'down', gsearch: { body: gsearchRSS } },
+    { companyName: () => 'NVIDIA Corporation', indirectThreshold: 0.6, indirectMargin: 0.2, ...extra })
+  const cached = (storage) => JSON.parse(storage.getItem('newsedge_news_v1_NVDA'))
+
+  it('keeps rejected search results flagged cand, and the keyword-accepted one unflagged', async () => {
+    const { api, storage } = setup({ indirectMode: 'shadow' })
+    await api.get('/api/news/NVDA', { params: { days: 30 } })
+    expect(cached(storage).filter((a) => a.cand).map((a) => a.headline).sort()).toEqual(['Earthquake shuts down island plants that make advanced processors', 'Local bakery wins award'])
+    expect(cached(storage).find((a) => a.headline.startsWith('TSMC')).cand).toBeUndefined()
+  })
+  it('never counts a candidate in the feed', async () => {
+    const { api } = setup({ indirectMode: 'shadow' })
+    const { data } = await api.get('/api/news/NVDA', { params: { days: 30, min_relevance: 0.2 } })
+    expect(data.map((a) => a.headline).sort()).toEqual(['Nvidia posts record data center revenue', 'TSMC warns of capacity shortage'])
+  })
+  it('keeps no candidates when the mode is off, or while the threshold is unset', async () => {
+    for (const extra of [{ indirectMode: 'off' }, { indirectMode: 'shadow', indirectThreshold: null }]) {
+      const { api, storage } = setup(extra)
+      await api.get('/api/news/NVDA', { params: { days: 30 } })
+      expect(cached(storage).some((a) => a.cand)).toBe(false)
+    }
+  })
+  it('keeps only the newest maxCandidates candidates', async () => {
+    const { api, storage } = setup({ indirectMode: 'shadow', maxCandidates: 1 })
+    await api.get('/api/news/NVDA', { params: { days: 30 } })
+    expect(cached(storage).filter((a) => a.cand).map((a) => a.headline)).toEqual(['Local bakery wins award']) // newest of the two
+  })
+})
+
 // ---- storylines through the API ---------------------------------------------
 describe('storylines in the feed', () => {
   // 40 ordinary AAPL stories over three weeks, plus 14 pieces on one developing story in the last two days

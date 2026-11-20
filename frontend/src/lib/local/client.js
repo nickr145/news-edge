@@ -28,9 +28,18 @@ export function createLocalApi({
   semanticMode, // 'off' | 'shadow' | 'on'; default: events.semantic.mode in data/news_config.json
   semanticThreshold, // default: events.semantic.threshold (only evaluation overrides it)
   storylineMode, // 'off' | 'shadow' | 'on'; default: storylines.semantic.mode
-  storylineSimilarity // default: storylines.semantic.similarity (only evaluation overrides it)
+  storylineSimilarity, // default: storylines.semantic.similarity (only evaluation overrides it)
+  indirectMode, // 'off' | 'shadow' | 'on'; default: indirect.semantic.mode
+  indirectThreshold, // default: indirect.semantic.threshold (null = feature inactive)
+  indirectMargin, // default: indirect.semantic.margin
+  maxCandidates = 200 // unadmitted indirect candidates kept per ticker (newest first)
 } = {}) {
   const src = createSources({ fetchImpl, storage })
+  const ISEM = config.indirect.semantic
+  const iMode = indirectMode ?? ISEM.mode
+  const iThreshold = indirectThreshold === undefined ? ISEM.threshold : indirectThreshold
+  const iMargin = indirectMargin ?? ISEM.margin ?? 0
+  const indirectActive = iMode !== 'off' && iThreshold != null // no threshold yet = nothing to compare against
   const newsKey = (t) => `newsedge_news_v1_${A.yahooSymbol(t)}`
   const loadNews = (t) => { try { return JSON.parse(storage.getItem(newsKey(t)) || '[]') } catch { return [] } }
   const saveNews = (t, a) => { try { storage.setItem(newsKey(t), JSON.stringify(a)) } catch { /* quota: keep working from memory this session */ } }
@@ -45,21 +54,27 @@ export function createLocalApi({
       try { fresh = await src.yahooNews(ticker) } catch (e) { failure = e }
       if (!cached.length) fresh = fresh.concat(await src.googleNews(ticker, companyName(ticker), { now: now() }))
       const sym = A.yahooSymbol(ticker)
+      let candidates = []
       if (!indirectDone.has(sym)) {
         indirectDone.add(sym)
         const profile = profileOf(ticker)
         const found = (await Promise.all(N.indirectQueries(profile).map((q) => src.googleSearch(q).catch(() => [])))).flat()
-        fresh = fresh.concat(found.filter((a) => N.exposureOf(profile, a.headline, a.symbols || [])))
+        const bears = (a) => N.exposureOf(profile, a.headline, a.symbols || [])
+        fresh = fresh.concat(found.filter(bears))
+        // Rejected results are kept, flagged, for the semantic check (indirect.js); they count only if admitted.
+        if (indirectActive) candidates = found.filter((a) => !bears(a)).map((a) => ({ ...a, cand: true }))
       }
       if (failure && !byId.size && !fresh.length) throw failure
-      for (const a of fresh) {
+      for (const a of [...fresh, ...candidates]) {
         const id = hashId(a.url)
         if (byId.has(id)) continue
         const compound = score(a.headline)
         byId.set(id, { ...a, id, compound, sentiment_label: A.label(compound), source_weight: A.sourceWeight(a.source) })
       }
       const cutoff = now().getTime() - RETENTION_MS
+      let room = maxCandidates
       const merged = [...byId.values()].filter((a) => Date.parse(a.published_at) >= cutoff).sort((a, b) => b.published_at.localeCompare(a.published_at))
+        .filter((a) => !a.cand || room-- > 0)
       saveNews(ticker, merged)
       embedMissing(ticker) // background: never delays the articles themselves
       return merged
@@ -116,7 +131,7 @@ export function createLocalApi({
     return damped.filter((e) => e.tMs >= sinceMs)
   }
 
-  const withoutEmb = ({ emb, ...rest }) => rest // embeddings stay in the cache, never in what the UI receives
+  const withoutEmb = ({ emb, cand, ...rest }) => rest // embeddings and the candidate flag stay in the cache, never in what the UI receives
   const daysAgo = (d) => now().getTime() - d * DAY_MS
   const round4 = (x) => Math.round(x * 1e4) / 1e4
   /** Recency-weighted sentiment of events for a window/horizon of `days` (half-life = days / 3). */
