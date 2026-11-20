@@ -20,6 +20,8 @@ struct NewsConfig: Decodable {
         let semantic: Semantic
     }
     struct Storylines: Decodable {
+        struct Semantic: Decodable { let mode: String; let similarity: Double; let noSharedEntityCosine: Double }
+        let semantic: Semantic
         let windowHours: Double, contextDays: Double
         let minEvents: Int, minLocal: Int, minOutside: Int, noBaselineLocal: Int
         let dampingFloor: Double, minRate: Double, minBurst: Double, noBaselineRate: Double

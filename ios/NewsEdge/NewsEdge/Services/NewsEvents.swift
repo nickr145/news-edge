@@ -53,6 +53,7 @@ struct NewsEvent {
     var damp: Double = 1       // 1/sqrt(rank) within a bursting storyline, floored; 1 otherwise
     var storyline: String? = nil
     var storyRank: Int = 1
+    var storyKind: String? = nil // "semantic" when the storyline came from meaning rather than shared words
     var size: Int { articles.count }
 }
 
@@ -320,7 +321,8 @@ enum NewsEvents {
     /// A term is a storyline when it bursts: in >= `minLocal` events within +/-72h of an event and >= 12% of them, and >= 3x as
     /// common there as in the rest of the set (steady words never qualify; Title Case doesn't matter). The k-th event of a
     /// storyline within the window counts for 1/sqrt(k) of its weight (floor 0.25). Mirrors dampStorylines in news.js.
-    static func dampStorylines(_ events: [NewsEvent], exclude: Set<String> = []) -> [NewsEvent] {
+    static func dampStorylines(_ events: [NewsEvent], exclude: Set<String> = [], profile: NewsProfile? = nil, ignore: Set<String> = [],
+                               mode: String? = nil, similarity: Double? = nil, log: ((NewsSemantic.StoryDecision) -> Void)? = nil) -> [NewsEvent] {
         let n = events.count
         guard n >= Story.minEvents else { return events }
         let t = events.map { $0.time.timeIntervalSince1970 }
@@ -354,7 +356,31 @@ enum NewsEvents {
             out[i].storyRank = rank
             out[i].weight = e.weight * damp
         }
+        semanticStage(events, &out, exclude: exclude, profile: profile, ignore: ignore, mode: mode, similarity: similarity, log: log)
         return out
+    }
+
+    /// Storylines that share no keyword ("CEO resigns" / "chief steps down") but mean the same thing. An event takes the semantic
+    /// story only when it damps more than its word-based storyline did. "shadow" logs what it would change; "on" applies it.
+    private static func semanticStage(_ events: [NewsEvent], _ out: inout [NewsEvent], exclude: Set<String>, profile: NewsProfile?, ignore: Set<String>,
+                                      mode: String?, similarity: Double?, log: ((NewsSemantic.StoryDecision) -> Void)?) {
+        let mode = mode ?? NewsConfig.shared.storylines.semantic.mode
+        if mode == "off" { return }
+        let terms = profile.map { $0.people + $0.supply + $0.competitors + $0.sectorTerms } ?? []
+        let found = NewsSemantic.storylines(events, window: storyWindow, terms: terms, ignore: ignore, exclude: exclude, similarity: similarity)
+        for (i, story) in found.enumerated() {
+            guard let s = story else { continue }
+            let tokenRank = out[i].storyline != nil ? out[i].storyRank : 0
+            if s.rank <= tokenRank || s.rank < 2 { continue } // the word-based storyline already covers it, or it is the first piece
+            let damp = max(Story.floor, 1 / Double(s.rank).squareRoot())
+            if damp >= out[i].damp { continue }
+            log?(NewsSemantic.StoryDecision(headline: events[i].rep.headline, label: s.label, rank: s.rank, local: s.local, tokenRank: tokenRank,
+                                            damp: damp, tokenDamp: out[i].damp, related: s.similar.prefix(3).map { events[$0].rep.headline },
+                                            applied: mode == "on", mode: mode))
+            if mode != "on" { continue }
+            out[i].damp = damp; out[i].storyline = s.label; out[i].storyRank = s.rank; out[i].storyKind = "semantic"
+            out[i].weight = events[i].weight * damp
+        }
     }
 
     // MARK: - Searches that find the indirect news
