@@ -41,16 +41,25 @@ export function createLocalApi({
     const run = async () => {
       const cached = loadNews(ticker)
       const byId = new Map(cached.map((a) => [a.id, a]))
-      let fresh = [], failure
-      try { fresh = await src.yahooNews(ticker) } catch (e) { failure = e }
-      if (!cached.length) fresh = fresh.concat(await src.googleNews(ticker, companyName(ticker), { now: now() }))
       const sym = A.yahooSymbol(ticker)
-      if (!indirectDone.has(sym)) {
-        indirectDone.add(sym)
-        const profile = profileOf(ticker)
-        const found = (await Promise.all(N.indirectQueries(profile).map((q) => src.googleSearch(q).catch(() => [])))).flat()
-        fresh = fresh.concat(found.filter((a) => N.exposureOf(profile, a.headline, a.symbols || [])))
-      }
+      const needIndirect = !indirectDone.has(sym)
+      if (needIndirect) indirectDone.add(sym)
+      const profile = profileOf(ticker)
+      // Independent sources, so fetch them together: three round trips in a row made a first visit take 5-10 s.
+      const [yahoo, google, indirect] = await Promise.allSettled([
+        src.yahooNews(ticker),
+        cached.length ? [] : src.googleNews(ticker, companyName(ticker), { now: now() }), // first sight of a ticker only
+        needIndirect
+          ? Promise.all(N.indirectQueries(profile).map((q) => src.googleSearch(q).catch(() => []))).then((r) => r.flat())
+          : []
+      ])
+      const failure = yahoo.status === 'rejected' ? yahoo.reason : undefined
+      const found = indirect.status === 'fulfilled' ? indirect.value : []
+      const fresh = [
+        ...(yahoo.status === 'fulfilled' ? yahoo.value : []),
+        ...(google.status === 'fulfilled' ? google.value : []),
+        ...found.filter((a) => N.exposureOf(profile, a.headline, a.symbols || []))
+      ]
       if (failure && !byId.size && !fresh.length) throw failure
       for (const a of fresh) {
         const id = hashId(a.url)

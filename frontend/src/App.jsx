@@ -10,10 +10,7 @@ export default function App() {
   return (
     <>
       <header className="topbar">
-        <Link to="/" className="nav-brand">
-          <div className="nav-mark">NE</div>
-          <span className="nav-name">NewsEdge</span>
-        </Link>
+        <Link to="/" className="brand">NewsEdge</Link>
         {!onHome && <TickerSearch compact />}
       </header>
       <div className="app-content">

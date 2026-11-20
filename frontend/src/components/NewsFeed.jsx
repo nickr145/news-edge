@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 
 function relativeTime(dateStr) {
   const diff = Date.now() - new Date(dateStr).getTime()
@@ -13,46 +13,53 @@ function relativeTime(dateStr) {
 // Why a headline counts for this ticker when it doesn't name the company (see lib/local/news.js).
 const CHANNEL_LABELS = { people: 'Leadership', supply: 'Supply chain', sector: 'Sector', competitor: 'Competitor', macro: 'Macro' }
 
+const PAGE = 25
+
 export default function NewsFeed({ articles, loading }) {
-  const [collapsed, setCollapsed] = useState(true)
+  const [open, setOpen] = useState(true)
+  const [shown, setShown] = useState(PAGE)
+  const listId = useId()
 
   return (
-    <div className="card">
-      <div className="news-header" style={{ cursor: 'pointer' }} onClick={() => setCollapsed((c) => !c)}>
-        <div className="panel-label" style={{ margin: 0 }}>Live News</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-          <span className="news-count">{articles.length} articles</span>
-          <span className="news-chevron" style={{ color: 'var(--muted)', fontSize: 12, fontFamily: 'JetBrains Mono, monospace', userSelect: 'none' }}>
-            {collapsed ? '▸' : '▾'}
-          </span>
-        </div>
+    <section className="card">
+      <button className="news-toggle" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-controls={listId}>
+        <h2 className="card-title">Live news</h2>
+        <span className="news-count">{articles.length} articles {open ? '▾' : '▸'}</span>
+      </button>
+
+      <div id={listId} hidden={!open}>
+        {articles.length === 0 && !loading && (
+          <p className="muted-text" style={{ marginTop: '0.8rem' }}>No articles yet for this window. Try a longer window or a lower relevance.</p>
+        )}
+        <ul className="news-list">
+          {articles.slice(0, shown).map((a) => {
+            const label = String(a.sentiment_label || '').toLowerCase()
+            return (
+              <li key={a.id} className="news-row">
+                <time className="news-time" dateTime={a.published_at}>{relativeTime(a.published_at)}</time>
+                <div>
+                  <a href={a.url} target="_blank" rel="noreferrer" className="news-headline">{a.headline}</a>
+                  <div className="news-meta">
+                    <span>{a.source || 'unknown'}</span>
+                    {CHANNEL_LABELS[a.channel] && <span className="why" title="Indirect news: it bears on this ticker without naming it">{CHANNEL_LABELS[a.channel]}</span>}
+                    {a.story_damp < 1 && <span title={`Part of an ongoing story ("${a.storyline}"), piece #${a.story_rank}: later pieces of a story count for less`}>ongoing story, counts {Math.round(a.story_damp * 100)}%</span>}
+                    {a.event_outlets > 1 && <span title="Counted once; this story was reported by several outlets">+{a.event_outlets - 1} outlet{a.event_outlets > 2 ? 's' : ''}</span>}
+                  </div>
+                </div>
+                <div className="news-side">
+                  {label && <span className={`tag ${label}`}>{label}</span>}
+                  <span>rel {Number(a.relevance_score || 0).toFixed(2)}</span>
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+        {articles.length > shown && (
+          <button className="btn news-more" onClick={() => setShown((n) => n + PAGE)}>
+            Show {Math.min(PAGE, articles.length - shown)} more
+          </button>
+        )}
       </div>
-      {!collapsed && articles.length === 0 && !loading && (
-        <p className="muted-text">No articles yet. Subscribe to a ticker to begin.</p>
-      )}
-      {!collapsed && (
-      <div className="news-list">
-        {articles.map((a) => {
-          const label = String(a.sentiment_label || '').toLowerCase()
-          return (
-            <article key={a.id} className="news-article">
-              <a href={a.url} target="_blank" rel="noreferrer" className="news-headline">
-                {a.headline}
-              </a>
-              <div className="news-meta">
-                <span className="source-chip">{a.source || 'unknown'}</span>
-                {CHANNEL_LABELS[a.channel] && <span className="channel-chip" title="Indirect news: it bears on this ticker without naming it">{CHANNEL_LABELS[a.channel]}</span>}
-                {a.story_damp < 1 && <span className="outlets-chip" title={`Part of an ongoing story ("${a.storyline}"), piece #${a.story_rank}: later pieces of a story count for less`}>ongoing · counts {Math.round(a.story_damp * 100)}%</span>}
-                {a.event_outlets > 1 && <span className="outlets-chip" title="Counted once; this story was reported by several outlets">+{a.event_outlets - 1} outlet{a.event_outlets > 2 ? 's' : ''}</span>}
-                {label && <span className={`news-badge ${label}`}>{label}</span>}
-                <span className="rel-score">rel {Number(a.relevance_score || 0).toFixed(2)}</span>
-                <span className="time-text">{relativeTime(a.published_at)}</span>
-              </div>
-            </article>
-          )
-        })}
-      </div>
-      )}
-    </div>
+    </section>
   )
 }

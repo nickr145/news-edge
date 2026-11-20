@@ -1,15 +1,15 @@
 const FEATURE_LABELS = {
   ewma_sentiment_1d: 'Sentiment 1d',
   ewma_sentiment_7d: 'Sentiment 7d',
-  sentiment_volatility: 'Sent. Volatility',
-  article_volume_24h: 'News Volume',
+  sentiment_volatility: 'Sent. volatility',
+  article_volume_24h: 'News volume',
   rsi_14: 'RSI (14)',
   momentum_5d: 'Momentum 5d',
-  bb_position: 'Bollinger Band',
-  volume_ratio: 'Volume Ratio',
+  bb_position: 'Bollinger band',
+  volume_ratio: 'Volume ratio',
 }
 
-function ShapChart({ importances }) {
+function Drivers({ importances }) {
   if (!importances) return null
 
   const meta = importances.__model || {}
@@ -23,24 +23,24 @@ function ShapChart({ importances }) {
 
   if (!entries.length) return null
 
-  const maxAbs = Math.max(...entries.map(e => Math.abs(e.value)), 1e-9)
+  const maxAbs = Math.max(...entries.map((e) => Math.abs(e.value)), 1e-9)
 
   return (
-    <div className="shap-section">
-      <div className="shap-header">
-        {isFallback ? 'Feature Values' : 'SHAP Explanations'}
-        {!isFallback && <span className="shap-model-tag">XGB</span>}
+    <div className="drivers">
+      <div className="drivers-title">
+        {isFallback ? 'Feature values' : 'What moved the signal'}
+        {!isFallback && <span className="drivers-tag">XGB · SHAP</span>}
       </div>
       {entries.map(({ key, label, value }) => {
         const pct = Math.round((Math.abs(value) / maxAbs) * 100)
         const dir = value >= 0 ? 'pos' : 'neg'
         return (
-          <div key={key} className="shap-row">
-            <span className="shap-label">{label}</span>
-            <div className="shap-bar-track">
-              <div className={`shap-bar ${dir}`} style={{ width: `${pct}%` }} />
+          <div key={key} className="driver-row">
+            <span className="driver-label">{label}</span>
+            <div className="driver-track" aria-hidden="true">
+              <div className={`driver-bar ${dir}`} style={{ width: `${pct}%` }} />
             </div>
-            <span className={`shap-val ${dir}`}>{value >= 0 ? '+' : ''}{value.toFixed(3)}</span>
+            <span className={`driver-val ${value >= 0 ? 'up' : 'down'}`}>{value >= 0 ? '+' : '−'}{Math.abs(value).toFixed(3)}</span>
           </div>
         )
       })}
@@ -48,53 +48,41 @@ function ShapChart({ importances }) {
   )
 }
 
+/** Inputs behind the signal (the verdict itself lives in the strip above), plus horizon and re-run. */
 export default function PredictionCard({ prediction, onPredict, predicting, horizonDays, onHorizonChange }) {
-  const rec = prediction?.recommendation?.toLowerCase() || ''
-  const confidence = prediction ? (prediction.confidence * 100).toFixed(1) : 0
-
   return (
     <div className="card">
-      <div className="panel-label">Recommendation</div>
+      <h2 className="card-title">Signal inputs</h2>
       {prediction ? (
         <>
-          <div className={`signal-display ${rec}`}>{prediction.recommendation}</div>
-          <div className="confidence-row">
-            <span>Confidence</span>
-            <span className="confidence-val">{confidence}%</span>
-          </div>
-          <div className="confidence-bar">
-            <div className={`confidence-fill ${rec}`} style={{ width: `${confidence}%` }} />
-          </div>
-          <div className="metric-grid">
-            <div className="metric-cell">
-              <span className="metric-label">Sentiment</span>
-              <span className="metric-value">{Number(prediction.sentiment_score || 0).toFixed(3)}</span>
+          <div className="kv">
+            <div className="kv-row">
+              <span className="kv-label">Sentiment score</span>
+              <span className="kv-value">{Number(prediction.sentiment_score || 0).toFixed(3)}</span>
             </div>
-            <div className="metric-cell">
-              <span className="metric-label">RSI</span>
-              <span className="metric-value">{prediction.price_rsi?.toFixed?.(1) ?? '—'}</span>
+            <div className="kv-row">
+              <span className="kv-label">RSI (14)</span>
+              <span className="kv-value">{prediction.price_rsi?.toFixed?.(1) ?? '—'}</span>
             </div>
           </div>
-          <ShapChart importances={prediction.feature_importances} />
+          <Drivers importances={prediction.feature_importances} />
         </>
       ) : (
-        <p className="muted-text" style={{ marginBottom: '0.75rem' }}>{predicting ? 'Calculating the recommendation…' : 'Run a prediction to see a RISE / STABLE / FALL signal.'}</p>
+        <p className="muted-text">{predicting ? 'Calculating…' : 'Run a prediction to see what drives the signal.'}</p>
       )}
-      <div className="horizon-row">
-        <span className="ctrl-label">Horizon</span>
-        <select
-          className="ctrl-select"
-          value={horizonDays}
-          onChange={(e) => onHorizonChange(Number(e.target.value))}
-        >
-          <option value={1}>1 day</option>
-          <option value={5}>5 days</option>
-          <option value={14}>14 days</option>
-        </select>
+      <div className="model-controls">
+        <label className="field">
+          Horizon
+          <select className="select" value={horizonDays} onChange={(e) => onHorizonChange(Number(e.target.value))}>
+            <option value={1}>1 day</option>
+            <option value={5}>5 days</option>
+            <option value={14}>14 days</option>
+          </select>
+        </label>
+        <button className="btn btn--primary" onClick={onPredict} disabled={predicting}>
+          {predicting ? 'Analyzing…' : prediction ? 'Run again' : 'Run prediction'}
+        </button>
       </div>
-      <button className="btn-primary" onClick={onPredict} disabled={predicting}>
-        {predicting ? 'Analyzing…' : 'Run Prediction'}
-      </button>
     </div>
   )
 }

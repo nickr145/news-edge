@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { TICKERS } from '../data/tickers'
 
@@ -8,6 +8,8 @@ export default function TickerSearch({ compact = false }) {
   const [activeIdx, setActiveIdx] = useState(0)
   const navigate = useNavigate()
   const wrapperRef = useRef(null)
+  const inputRef = useRef(null)
+  const listId = useId()
 
   const q = query.trim().toUpperCase()
   const words = q.split(/\s+/).filter(Boolean)
@@ -62,6 +64,18 @@ export default function TickerSearch({ compact = false }) {
     }
   }
 
+  // "/" jumps to search from anywhere that isn't a text field.
+  useEffect(() => {
+    const onSlash = (e) => {
+      const tag = document.activeElement?.tagName
+      if (e.key !== '/' || e.metaKey || e.ctrlKey || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+      e.preventDefault()
+      inputRef.current?.focus()
+    }
+    document.addEventListener('keydown', onSlash)
+    return () => document.removeEventListener('keydown', onSlash)
+  }, [])
+
   useEffect(() => {
     const handler = (e) => {
       if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
@@ -72,10 +86,19 @@ export default function TickerSearch({ compact = false }) {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
+  const expanded = open && matches.length > 0
+
   return (
-    <div className={`ticker-search-wrap${compact ? ' ticker-search-wrap--compact' : ''}`} ref={wrapperRef}>
+    <div className={`search${compact ? ' search--compact' : ''}`} ref={wrapperRef}>
       <input
-        className={`ticker-search-input${compact ? ' ticker-search-input--compact' : ''}`}
+        ref={inputRef}
+        className="search-input"
+        role="combobox"
+        aria-label="Search ticker or company"
+        aria-expanded={expanded}
+        aria-controls={listId}
+        aria-autocomplete="list"
+        aria-activedescendant={expanded ? `${listId}-${activeIdx}` : undefined}
         value={query}
         onChange={(e) => {
           setQuery(e.target.value)
@@ -84,25 +107,29 @@ export default function TickerSearch({ compact = false }) {
         }}
         onFocus={() => { if (query) setOpen(true) }}
         onKeyDown={onKeyDown}
-        placeholder={compact ? 'Search ticker or company…' : 'Search ticker or company — AAPL, Amazon, NVDA…'}
+        placeholder={compact ? 'Search ticker or company' : 'Search a ticker or company: NVDA, Apple, Amazon'}
         autoFocus={!compact}
         autoComplete="off"
         spellCheck={false}
       />
-      {open && matches.length > 0 && (
-        <div className="ticker-dropdown">
+      {!query && <kbd className="search-kbd" aria-hidden="true">/</kbd>}
+      {expanded && (
+        <ul className="search-menu" id={listId} role="listbox">
           {matches.map((t, i) => (
-            <div
+            <li
               key={t.symbol}
-              className={`ticker-dropdown-item ${i === activeIdx ? 'active' : ''}`}
+              id={`${listId}-${i}`}
+              role="option"
+              aria-selected={i === activeIdx}
+              className="search-option"
               onMouseDown={() => go(t.symbol)}
               onMouseEnter={() => setActiveIdx(i)}
             >
-              <span className="ticker-dropdown-symbol">{t.symbol}</span>
-              <span className="ticker-dropdown-name">{t.name}</span>
-            </div>
+              <span className="search-option-symbol">{t.symbol}</span>
+              <span className="search-option-name">{t.name}</span>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
     </div>
   )
