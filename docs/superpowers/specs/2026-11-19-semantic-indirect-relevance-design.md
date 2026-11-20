@@ -50,3 +50,15 @@ Web unit tests with synthetic vectors: threshold, margin, keyword-wins, shadow-c
 ## Out of scope
 
 Precision filtering, changes to the channel relevance table, new data sources, and ticker-impact scoring (Phase 5).
+
+## Result (2026-11-20): parked, not shipped
+
+Tasks 1 to 4 were built and reviewed on branch `semantic/p4-web-indirect-relevance` (anchors, candidates, admission, shadow log), plus the live harness `indirect.shadow.test.js`. The live evaluation did not find a usable threshold, so `indirect.semantic.threshold` stays `null` (feature dormant), the work is not merged to the epic branch, and Phase 4b (iOS) was not started.
+
+12 tickers, real MiniLM:
+- The pool is small: 37 candidates (NVDA, AMZN, GOOGL, INTC had none). Hand labels, headline only and strict: 6 genuine, 8 unsure, 23 false.
+- Cosine and margin do not separate genuine from false. A Nvidia chip story scored 0.55 for AAPL, steel tariffs 0.59 for TSLA, and two local measles stories 0.50 and 0.51 for PFE with the highest margins in the set.
+- By channel: people 0 genuine of 9, supply 3 of 14, sector 0 of 3, competitor 1 of 4, macro 2 of 7.
+- 0.5 / 0.05 admits 8 headlines (50% false, 75% counting unsure); 0.6 / 0.05 admits 2 (0% false, 50% counting unsure); 0.7 admits none. Nothing reaches the roughly 20% false-positive rate accepted for the storyline stage.
+
+Conclusion: anchors built from profile terms are too weak a reference, so broader queries alone would add candidates at about the same false-positive rate. Ideas not tried: require a shared entity (the guard that cut storyline false positives sharply), compare against the ticker's already-accepted indirect headlines, or give the channel classifier labelled data.
