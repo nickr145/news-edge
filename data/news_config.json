@@ -48,7 +48,7 @@
     "no_baseline_local": 6,
     "no_baseline_rate": 0.15,
     "semantic": {
-      "mode": "shadow",
+      "mode": "on",
       "similarity": 0.55,
       "no_shared_entity_cosine": 0.75
     }
