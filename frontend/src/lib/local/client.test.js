@@ -179,6 +179,39 @@ describe('endpoints', () => {
 })
 
 // ---- the proxy ------------------------------------------------------------
+// ---- load speed -----------------------------------------------------------
+describe('load speed', () => {
+  /** Every request takes 20 ms; records how many were in flight at once and how often each target was hit. */
+  const slowNet = () => {
+    let active = 0, peak = 0
+    const hits = {}
+    const fn = async (url) => {
+      const target = new URL(url, 'http://x').searchParams.get('target')
+      hits[target] = (hits[target] || 0) + 1
+      active++; peak = Math.max(peak, active)
+      await new Promise((r) => setTimeout(r, 20))
+      active--
+      const body = target === 'chart' ? chart([1, 2], [1762000000, 1762086400]) : target === 'search' ? search([]) : RSS
+      return { ok: true, status: 200, text: async () => body }
+    }
+    return Object.assign(fn, { hits, peak: () => peak })
+  }
+
+  it('first visit fetches Yahoo news, the Google backfill and the indirect searches together, not one after another', async () => {
+    const fetchImpl = slowNet()
+    const api = createLocalApi({ fetchImpl, storage: memStorage(), score, companyName: () => 'Apple Inc.', now: () => NOW })
+    await api.get('/api/news/AAPL', { params: { days: 30 } })
+    expect(fetchImpl.peak()).toBeGreaterThan(4) // sequential stages topped out at 4 (the four weekly Google windows)
+  })
+
+  it('concurrent bars, risk and bars requests share one Yahoo request per symbol', async () => {
+    const fetchImpl = slowNet()
+    const api = createLocalApi({ fetchImpl, storage: memStorage(), score, now: () => NOW })
+    await Promise.all([api.get('/api/price/AAPL/bars'), api.get('/api/price/AAPL/bars'), api.get('/api/price/AAPL/risk')])
+    expect(fetchImpl.hits.chart).toBe(2) // AAPL once, SPY once
+  })
+})
+
 describe('proxy handler', () => {
   it('gsearch accepts conservative search syntax only', async () => {
     const run2 = async (query) => { const res = { headers: {}, setHeader() {}, end(b) { this.body = b } }; await handler({ query }, res); return res }

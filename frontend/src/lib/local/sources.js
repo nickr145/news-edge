@@ -5,20 +5,26 @@ const dayStr = (d) => d.toISOString().slice(0, 10)
 
 export function createSources({ fetchImpl = (...a) => fetch(...a), proxyBase = '/api/proxy', storage } = {}) {
   const memo = new Map() // url -> { at, text }
+  const inflight = new Map() // url -> Promise<text>: concurrent callers (bars, risk, predict) share one request
 
   async function get(target, params, ttlMs) {
     const url = `${proxyBase}?${new URLSearchParams({ target, ...params })}`
     const hit = memo.get(url)
     if (hit && Date.now() - hit.at < ttlMs) return hit.text
-    const res = await fetchImpl(url)
-    if (!res.ok) {
-      const err = new Error(`${target} ${res.status}`)
-      err.status = res.status
-      throw err
-    }
-    const text = await res.text()
-    memo.set(url, { at: Date.now(), text })
-    return text
+    if (inflight.has(url)) return inflight.get(url)
+    const request = (async () => {
+      const res = await fetchImpl(url)
+      if (!res.ok) {
+        const err = new Error(`${target} ${res.status}`)
+        err.status = res.status
+        throw err
+      }
+      const text = await res.text()
+      memo.set(url, { at: Date.now(), text })
+      return text
+    })().finally(() => inflight.delete(url))
+    inflight.set(url, request)
+    return request
   }
 
   async function yahooBars(symbol) {

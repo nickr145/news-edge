@@ -1,19 +1,50 @@
 const FEATURE_LABELS = {
   ewma_sentiment_1d: 'Sentiment 1d',
   ewma_sentiment_7d: 'Sentiment 7d',
-  sentiment_volatility: 'Sent. Volatility',
-  article_volume_24h: 'News Volume',
+  sentiment_volatility: 'Sent. volatility',
+  article_volume_24h: 'News volume',
   rsi_14: 'RSI (14)',
   momentum_5d: 'Momentum 5d',
-  bb_position: 'Bollinger Band',
-  volume_ratio: 'Volume Ratio',
+  bb_position: 'Bollinger band',
+  volume_ratio: 'Volume ratio',
 }
 
-function ShapChart({ importances }) {
+// The on-device rule reports its raw inputs, not contributions, so show them as plain values:
+// no bars, no +/- colour (a bar there would just compare RSI's 0-100 scale with a -1..1 sentiment).
+const INPUT_FORMAT = {
+  ewma_sentiment_1d: (v) => v.toFixed(3),
+  ewma_sentiment_7d: (v) => v.toFixed(3),
+  sentiment_volatility: (v) => v.toFixed(3),
+  article_volume_24h: (v) => String(Math.round(v)),
+  rsi_14: (v) => v.toFixed(1),
+  momentum_5d: (v) => `${(v * 100).toFixed(1)}%`,
+  bb_position: (v) => v.toFixed(2),
+  volume_ratio: (v) => `${v.toFixed(2)}×`,
+}
+
+function Inputs({ importances }) {
+  const rows = Object.keys(INPUT_FORMAT).filter((k) => Number.isFinite(Number(importances[k])))
+  return (
+    <div className="drivers">
+      <div className="drivers-title">Inputs <span title="The rule uses news sentiment only; price inputs are shown for context">(context, not all used)</span></div>
+      <div className="kv">
+        {rows.map((k) => (
+          <div key={k} className="kv-row">
+            <span className="kv-label">{FEATURE_LABELS[k]}</span>
+            <span className="kv-value">{INPUT_FORMAT[k](Number(importances[k]))}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function Drivers({ importances }) {
   if (!importances) return null
 
   const meta = importances.__model || {}
   const isFallback = meta.version === 'fallback_rule_v2'
+  if (isFallback) return <Inputs importances={importances} />
 
   const entries = Object.entries(importances)
     .filter(([k]) => !k.startsWith('__'))
@@ -23,24 +54,24 @@ function ShapChart({ importances }) {
 
   if (!entries.length) return null
 
-  const maxAbs = Math.max(...entries.map(e => Math.abs(e.value)), 1e-9)
+  const maxAbs = Math.max(...entries.map((e) => Math.abs(e.value)), 1e-9)
 
   return (
-    <div className="shap-section">
-      <div className="shap-header">
-        {isFallback ? 'Feature Values' : 'SHAP Explanations'}
-        {!isFallback && <span className="shap-model-tag">XGB</span>}
+    <div className="drivers">
+      <div className="drivers-title">
+        {isFallback ? 'Feature values' : 'What moved the signal'}
+        {!isFallback && <span className="drivers-tag">XGB · SHAP</span>}
       </div>
       {entries.map(({ key, label, value }) => {
         const pct = Math.round((Math.abs(value) / maxAbs) * 100)
         const dir = value >= 0 ? 'pos' : 'neg'
         return (
-          <div key={key} className="shap-row">
-            <span className="shap-label">{label}</span>
-            <div className="shap-bar-track">
-              <div className={`shap-bar ${dir}`} style={{ width: `${pct}%` }} />
+          <div key={key} className="driver-row">
+            <span className="driver-label">{label}</span>
+            <div className="driver-track" aria-hidden="true">
+              <div className={`driver-bar ${dir}`} style={{ width: `${pct}%` }} />
             </div>
-            <span className={`shap-val ${dir}`}>{value >= 0 ? '+' : ''}{value.toFixed(3)}</span>
+            <span className={`driver-val ${value >= 0 ? 'up' : 'down'}`}>{value >= 0 ? '+' : '−'}{Math.abs(value).toFixed(3)}</span>
           </div>
         )
       })}
@@ -48,57 +79,37 @@ function ShapChart({ importances }) {
   )
 }
 
+/** Inputs behind the signal (the verdict itself lives in the strip above), plus horizon and re-run. */
 export default function PredictionCard({ prediction, onPredict, predicting, horizonDays, onHorizonChange }) {
-  const rec = prediction?.recommendation?.toLowerCase() || ''
-  const confidence = prediction ? (prediction.confidence * 100).toFixed(1) : 0
-
   return (
     <div className="card">
-      <div className="panel-label">Recommendation</div>
+      <h2 className="card-title">Signal inputs</h2>
       {prediction ? (
         <>
-          <div className={`signal-display ${rec}`}>{prediction.recommendation}</div>
-          <div className="confidence-row">
-            <span>Confidence</span>
-            <span className="confidence-val">{confidence}%</span>
-          </div>
-          <div className="confidence-bar">
-            <div className={`confidence-fill ${rec}`} style={{ width: `${confidence}%` }} />
-          </div>
-          <div className="metric-grid">
-            <div className="metric-cell">
-              <span className="metric-label">Sentiment</span>
-              <span className="metric-value">{Number(prediction.sentiment_score || 0).toFixed(3)}</span>
-            </div>
-            <div className="metric-cell">
-              <span className="metric-label">RSI</span>
-              <span className="metric-value">{prediction.price_rsi?.toFixed?.(1) ?? '—'}</span>
-            </div>
-            <div className="metric-cell wide">
-              <span className="metric-label">Horizon</span>
-              <span className="metric-value">{prediction.horizon_days ?? '—'} days</span>
+          <div className="kv">
+            <div className="kv-row">
+              <span className="kv-label">Sentiment signal ({prediction.horizonDays}-day)</span>
+              <span className="kv-value">{Number(prediction.sentiment_score || 0).toFixed(3)}</span>
             </div>
           </div>
-          <ShapChart importances={prediction.feature_importances} />
+          <Drivers importances={prediction.feature_importances} />
         </>
       ) : (
-        <p className="muted-text" style={{ marginBottom: '0.75rem' }}>Run a prediction to see a RISE / STABLE / FALL signal.</p>
+        <p className="muted-text">{predicting ? 'Calculating…' : 'Run a prediction to see what drives the signal.'}</p>
       )}
-      <div className="horizon-row">
-        <span className="ctrl-label">Horizon</span>
-        <select
-          className="ctrl-select"
-          value={horizonDays}
-          onChange={(e) => onHorizonChange(Number(e.target.value))}
-        >
-          <option value={1}>1 day</option>
-          <option value={5}>5 days</option>
-          <option value={14}>14 days</option>
-        </select>
+      <div className="model-controls">
+        <label className="field">
+          Horizon
+          <select className="select" value={horizonDays} onChange={(e) => onHorizonChange(Number(e.target.value))}>
+            <option value={1}>1 day</option>
+            <option value={5}>5 days</option>
+            <option value={14}>14 days</option>
+          </select>
+        </label>
+        <button className="btn btn--primary" onClick={onPredict} disabled={predicting}>
+          {predicting ? 'Analyzing…' : prediction ? 'Run again' : 'Run prediction'}
+        </button>
       </div>
-      <button className="btn-primary" onClick={onPredict} disabled={predicting}>
-        {predicting ? 'Analyzing…' : 'Run Prediction'}
-      </button>
     </div>
   )
 }
