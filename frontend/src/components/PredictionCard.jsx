@@ -9,11 +9,42 @@ const FEATURE_LABELS = {
   volume_ratio: 'Volume ratio',
 }
 
+// The on-device rule reports its raw inputs, not contributions, so show them as plain values:
+// no bars, no +/- colour (a bar there would just compare RSI's 0-100 scale with a -1..1 sentiment).
+const INPUT_FORMAT = {
+  ewma_sentiment_1d: (v) => v.toFixed(3),
+  ewma_sentiment_7d: (v) => v.toFixed(3),
+  sentiment_volatility: (v) => v.toFixed(3),
+  article_volume_24h: (v) => String(Math.round(v)),
+  rsi_14: (v) => v.toFixed(1),
+  momentum_5d: (v) => `${(v * 100).toFixed(1)}%`,
+  bb_position: (v) => v.toFixed(2),
+  volume_ratio: (v) => `${v.toFixed(2)}×`,
+}
+
+function Inputs({ importances }) {
+  const rows = Object.keys(INPUT_FORMAT).filter((k) => Number.isFinite(Number(importances[k])))
+  return (
+    <div className="drivers">
+      <div className="drivers-title">Inputs <span title="The rule uses news sentiment only; price inputs are shown for context">(context, not all used)</span></div>
+      <div className="kv">
+        {rows.map((k) => (
+          <div key={k} className="kv-row">
+            <span className="kv-label">{FEATURE_LABELS[k]}</span>
+            <span className="kv-value">{INPUT_FORMAT[k](Number(importances[k]))}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function Drivers({ importances }) {
   if (!importances) return null
 
   const meta = importances.__model || {}
   const isFallback = meta.version === 'fallback_rule_v2'
+  if (isFallback) return <Inputs importances={importances} />
 
   const entries = Object.entries(importances)
     .filter(([k]) => !k.startsWith('__'))
@@ -57,12 +88,8 @@ export default function PredictionCard({ prediction, onPredict, predicting, hori
         <>
           <div className="kv">
             <div className="kv-row">
-              <span className="kv-label">Sentiment score</span>
+              <span className="kv-label">Sentiment signal ({prediction.horizonDays}-day)</span>
               <span className="kv-value">{Number(prediction.sentiment_score || 0).toFixed(3)}</span>
-            </div>
-            <div className="kv-row">
-              <span className="kv-label">RSI (14)</span>
-              <span className="kv-value">{prediction.price_rsi?.toFixed?.(1) ?? '—'}</span>
             </div>
           </div>
           <Drivers importances={prediction.feature_importances} />
